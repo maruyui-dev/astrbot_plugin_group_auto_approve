@@ -1,10 +1,17 @@
+#导入Astrbot模块以及第三方模块
 from encodings.aliases import aliases
 from datetime import datetime
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
+import astrbot.api.message_components as Comp
+import aiohttp
+#导入项目内部模块
+from .action import approve_group_request
+from .message import build_verify_message
+from .verify import handle_group_request
+from . import config
 
-REQUEST_CONFIG = True
 
 @register(
     "group_verify",
@@ -19,27 +26,35 @@ class MyPlugin(Star):
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
         pass
-    #=================================
-    #          事件监听
-    #=================================
+    #=====================================================#
+    #               事      件     监      听              #
+    #=====================================================#
     @filter.event_message_type(filter.EventMessageType.ALL)
-    async def test_event(self, event: AstrMessageEvent):
+    async def listen_event(self, event: AstrMessageEvent):
+        result = await handle_group_request(event)
+        # 不是入群申请
+        if result is None:
+            return
 
-        raw_event = event.message_obj.raw_message
-
-        if raw_event.get('post_type') == 'request':
-            if REQUEST_CONFIG == False:
-                return
-            user_id = raw_event['user_id']
-            comment = raw_event['comment']
-            timestamp = raw_event['time']
-            request_time = datetime.fromtimestamp(timestamp)
-            logger.info("触发事件")
-            logger.info(event.message_obj.raw_message)
-
+        # 是入群申请，但是处理失败
+        if not result.get("success"):
             yield event.plain_result(
-                f"收到一条入群申请\n申请者:{user_id}\n申请时间: {request_time}\n{comment}"
+                f"处理失败:{result.get('error')}"
             )
+            return
+        # 正常情况
+        success = await approve_group_request(
+            event,
+            result.get("flag"),
+            result.get("avatar")
+        )
+        if success:
+            yield event.chain_result(
+                build_verify_message(result)
+            )
+        else:
+            yield event.plain_result("自动同意入群失败")
+
     @filter.command_group("Group Verify", alias={"群组验证", "验证"})
     def group_verify(self, event: AstrMessageEvent):
         pass
