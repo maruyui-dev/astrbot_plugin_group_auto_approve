@@ -9,8 +9,9 @@ import aiohttp
 #导入项目内部模块
 from .action import approve_group_request
 from .message import build_verify_message
-from .verify import handle_group_request
+from .request import handle_group_request
 from . import config
+from .ai_verify import verify_by_llm
 
 
 @register(
@@ -31,6 +32,10 @@ class MyPlugin(Star):
     #=====================================================#
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def listen_event(self, event: AstrMessageEvent):
+        # 接收申请开关关闭时，直接忽略
+        if not config.REQUEST_CONFIG:
+            return
+
         result = await handle_group_request(event)
         # 不是入群申请
         if result is None:
@@ -43,17 +48,52 @@ class MyPlugin(Star):
             )
             return
         # 正常情况
-        success = await approve_group_request(
-            event,
-            result.get("flag"),
-            result.get("avatar")
-        )
-        if success:
-            yield event.chain_result(
-                build_verify_message(result)
+        # --- 新增：调用 AI 判断 ---
+        comment = result.get("comment", "")
+
+        try:
+            verify_result = await verify_by_llm(
+                self.context,
+                comment,
+                event,
+                group_name=result.get("group_name", ""),
+                group_notice=result.get("group_notice", ""),
+                group_notice_first=result.get("group_notice_first", "")
+            )
+        except Exception as e:
+            logger.error(f"调用 AI 验证异常: {e}")
+            verify_result = None
+
+        # AI 调用失败：不处理申请，只在群里发通知
+        if verify_result is None:
+            yield event.plain_result(
+                "⚠️ AI 验证服务暂时不可用，已跳过本次入群申请处理，请管理员手动审核。"
+            )
+            return
+
+        if verify_result.get("passed") is True:
+            success = await approve_group_request(
+                event,
+                result.get("flag"),
+                result.get("avatar"),
+                approve=True
             )
         else:
-            yield event.plain_result("自动同意入群失败")
+            reason = verify_result.get("reason", "验证未通过")
+            success = await approve_group_request(
+                event,
+                result.get("flag"),
+                result.get("avatar"),
+                approve=False,
+                reason=reason
+            )
+
+        if success:
+            yield event.chain_result(
+                build_verify_message(result, verify_result)
+            )
+        else:
+            yield event.plain_result("处理入群申请失败")
 
     @filter.command_group("Group Verify", alias={"群组验证", "验证"})
     def group_verify(self, event: AstrMessageEvent):
@@ -63,39 +103,60 @@ class MyPlugin(Star):
     async def receive_choice(self, event: AstrMessageEvent):
         """"""
         pass
-    @receive_choice.command("Open", alias={"开","开启", "open", "on", "On","ON"})
-    async def open(self, event: AstrMessageEvent):
-        message_chain = event.get_messages()  # 用户所发的消息的消息链 # from astrbot.api.message_components import *
-        logger.info(message_chain)
-        global REQUEST_CONFIG
 
-        if REQUEST_CONFIG == False:
-            yield event.plain_result("开启 接收申请 成功✅️")
-            REQUEST_CONFIG = True
-        elif REQUEST_CONFIG == True:
-            yield event.plain_result("接收申请 目前已是开启状态,无法重复开启❌️")
+    @receive_choice.command("Switch", alias={"切换", "开关", "switch"})
+    async def switch(self, event: AstrMessageEvent):
+        """
+        /群组验证 接收申请 切换 开
+        /群组验证 接收申请 切换 关
+        """
+        args = event.message_str.strip().split()
 
-    @receive_choice.command("Close", alias={"关", "关闭", "close", "off", "Off","OFF"})
-    async def close(self, event: AstrMessageEvent):
-        message_chain = event.get_messages()
-        logger.info(message_chain)
-        global REQUEST_CONFIG
+        if "切换" in args:
+            idx = args.index("切换")
+            action = args[idx + 1].lower() if idx + 1 < len(args) else ""
+        else:
+            action = args[-1].lower() if args else ""
 
-        if REQUEST_CONFIG == True:
-            yield event.plain_result("关闭 接收申请 成功✅️")
-            REQUEST_CONFIG = False
-        elif REQUEST_CONFIG == False:
-            yield event.plain_result("接收申请 目前已是关闭状态,无法重复关闭❌️")
+        if not action:
+            state = "开启" if config.REQUEST_CONFIG else "关闭"
+            yield event.plain_result(
+                f"当前 接收申请 状态：{state}\n"
+                f"用法：/群组验证 接收申请 切换 开|关"
+            )
+            return
+
+        if action in ("开", "开启", "open", "on", "true", "1"):
+            if config.REQUEST_CONFIG:
+                yield event.plain_result("接收申请 目前已是开启状态,无法重复开启❌️")
+            else:
+                config.REQUEST_CONFIG = True
+                yield event.plain_result("开启 接收申请 成功✅️")
+
+        elif action in ("关", "关闭", "close", "off", "false", "0"):
+            if not config.REQUEST_CONFIG:
+                yield event.plain_result("接收申请 目前已是关闭状态,无法重复关闭❌️")
+            else:
+                config.REQUEST_CONFIG = False
+                yield event.plain_result("关闭 接收申请 成功✅️")
+
+        else:
+            yield event.plain_result(
+                f"无法识别的参数：{action}\n"
+                f"用法：/群组验证 接收申请 切换 开|关"
+            )
 
     @receive_choice.command("help", alias={"帮助"})
     async def config_help(self, event):
         """
         查看验证配置说明
         """
+        logger.info(f"message_str = {event.message_str!r}")
+        state = "开启" if config.REQUEST_CONFIG else "关闭"
         yield event.plain_result(
-            "群组验证配置指令:\n"
-            "/群组验证 接收申请 开 - 开启审核\n"
-            "/群组验证 接收申请 关 - 关闭审核"
+            f"群组验证配置指令（当前接收申请：{state}）:\n"
+            f"/群组验证 接收申请 切换 开 - 开启审核\n"
+            f"/群组验证 接收申请 切换 关 - 关闭审核"
         )
 
     async def terminate(self):
