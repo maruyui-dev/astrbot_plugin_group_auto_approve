@@ -20,6 +20,8 @@ CARD_TEMPLATE = """
       margin: 0;
       padding: 0;
       background: transparent;
+      height: fit-content;
+      min-height: 0;
     }
     body {
       width: fit-content;
@@ -276,6 +278,7 @@ async def build_verify_message(context, result, verify_result=None):
                     "full_page": True,
                     "omit_background": True,
                     "viewport_width": 704,
+                    "viewport_height": 500,
                     "type": "png",
                     "quality": 90,
                 },
