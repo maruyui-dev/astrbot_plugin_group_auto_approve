@@ -12,22 +12,30 @@ CARD_TEMPLATE = """
   <meta charset="UTF-8">
   <style>
     * { box-sizing: border-box; }
+    html,
     body {
       margin: 0;
+      padding: 0;
+      background: transparent;
+    }
+    body {
+      width: fit-content;
       padding: 28px;
-      width: 680px;
-      background: #f4f7fb;
       color: #20314a;
       font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
     }
     .card {
+      width: 680px;
+      height: fit-content;
       overflow: hidden;
       border-radius: 24px;
       background: #ffffff;
       box-shadow: 0 18px 46px rgba(43, 66, 102, 0.14);
     }
     .hero {
-      padding: 28px 30px 26px;
+      position: relative;
+      min-height: 124px;
+      padding: 28px 116px 26px 30px;
       color: #ffffff;
       background: linear-gradient(135deg, #5a82ff 0%, #7e9cff 100%);
     }
@@ -42,6 +50,17 @@ CARD_TEMPLATE = """
       font-size: 25px;
       font-weight: 500;
       letter-spacing: 0.03em;
+    }
+    .group-avatar {
+      position: absolute;
+      top: 27px;
+      right: 30px;
+      width: 70px;
+      height: 70px;
+      border: 4px solid rgba(255, 255, 255, 0.8);
+      border-radius: 22px;
+      object-fit: cover;
+      background: #d9e3ff;
     }
     .content { padding: 26px 30px 24px; }
     .person {
@@ -108,6 +127,14 @@ CARD_TEMPLATE = """
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
+    .reject-title {
+      display: block;
+      margin-bottom: 3px;
+      color: #b24654;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+    }
     .footer {
       display: flex;
       justify-content: space-between;
@@ -124,6 +151,7 @@ CARD_TEMPLATE = """
     <div class="hero">
       <p class="eyebrow">ASTRBOT · GROUP REVIEW</p>
       <h1>新的入群申请</h1>
+      <img class="group-avatar" src="{{ group_avatar_data }}" alt="群头像">
     </div>
     <div class="content">
       <div class="person">
@@ -137,7 +165,7 @@ CARD_TEMPLATE = """
       <p class="label">申请理由</p>
       <p class="reason">{{ reason }}</p>
       {% if reject_reason %}
-      <div class="reject">拒绝理由：{{ reject_reason }}</div>
+      <div class="reject"><span class="reject-title">拒绝理由</span>{{ reject_reason }}</div>
       {% endif %}
       <div class="footer">
         <span class="time">{{ request_time }}</span>
@@ -195,9 +223,25 @@ async def build_verify_message(context, result, verify_result=None):
         except (OSError, ValueError) as error:
             logger.warning(f"读取申请者头像失败，将使用文字消息回退: {error}")
 
-    if avatar_data:
+    group_avatar_path = result.get("group_avatar")
+    group_avatar_data = ""
+    if group_avatar_path:
+        try:
+            group_avatar_file = Path(group_avatar_path)
+            group_mime_type = (
+                mimetypes.guess_type(group_avatar_file.name)[0] or "image/png"
+            )
+            encoded_group_avatar = base64.b64encode(
+                group_avatar_file.read_bytes()
+            ).decode("ascii")
+            group_avatar_data = f"data:{group_mime_type};base64,{encoded_group_avatar}"
+        except (OSError, ValueError) as error:
+            logger.warning(f"读取群头像失败，将使用文字消息回退: {error}")
+
+    if avatar_data and group_avatar_data:
         template_data = {
             "avatar_data": avatar_data,
+            "group_avatar_data": group_avatar_data,
             "nickname": _escape(result.get("nickname", "未知用户")),
             "user_id": _escape(result.get("user_id", "未知")),
             "status": _escape(status),
@@ -212,11 +256,17 @@ async def build_verify_message(context, result, verify_result=None):
                 CARD_TEMPLATE,
                 template_data,
                 return_url=False,
-                options={"full_page": True, "type": "png", "quality": 90},
+                options={"full_page": False, "type": "png", "quality": 90},
             )
             return [Image.fromFileSystem(image_path)]
         except Exception as error:
             logger.warning(f"渲染入群申请图片失败，将使用文字消息回退: {error}")
+
+    if group_avatar_path:
+        try:
+            Path(group_avatar_path).unlink(missing_ok=True)
+        except OSError as error:
+            logger.warning(f"删除临时群头像失败: {error}")
 
     message = (
         f"申请者：{result.get('nickname')}\n"
