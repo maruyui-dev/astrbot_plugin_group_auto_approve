@@ -47,7 +47,7 @@ from .record_message import build_review_records_message
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.5.0"
+    "1.6.0"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
