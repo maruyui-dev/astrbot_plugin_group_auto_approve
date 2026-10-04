@@ -46,7 +46,7 @@ from .record_store import get_review_records, save_review_record, set_record_dat
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.3.0"
+    "1.4.0"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
