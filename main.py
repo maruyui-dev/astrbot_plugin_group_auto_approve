@@ -2,7 +2,7 @@
 from encodings.aliases import aliases
 from datetime import datetime
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.api import logger
 import astrbot.api.message_components as Comp
 import aiohttp
@@ -19,12 +19,13 @@ from .agent_tools import (
     ClearWhitelistTool,
     GetListsTool,
     GetConfigTool,
+    GetReviewRecordsTool,
     _is_group_admin
 )
 #导入项目内部模块
 from .action import approve_group_request
 from .message import build_verify_message
-from .request import handle_group_request
+from .request import handle_group_request, set_avatar_dir
 from .ai_verify import verify_by_llm
 from .config import (
     get_group_cfg,
@@ -35,15 +36,17 @@ from .config import (
     in_blacklist,
     in_whitelist,
     add_to_list,
-    remove_from_list
+    remove_from_list,
+    set_plugin_data_dir,
 )
+from .record_store import get_review_records, save_review_record, set_record_data_dir
 
 
 @register(
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.0.0"
+    "1.3.0"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -52,6 +55,10 @@ class MyPlugin(Star):
 
     async def initialize(self):
         from .config import set_webui_config
+        plugin_data_dir = StarTools.get_data_dir("astrbot_plugin_group_auto_approve")
+        set_plugin_data_dir(plugin_data_dir)
+        set_avatar_dir(plugin_data_dir)
+        set_record_data_dir(plugin_data_dir)
         set_webui_config(self.plugin_config)
         init_config()
         logger.info(f"群组验证配置已加载，WebUI 配置：{self.plugin_config}")
@@ -87,8 +94,19 @@ class MyPlugin(Star):
                 reason=reject_reason
             )
             if success:
+                save_review_record(
+                    group_id,
+                    result.get("nickname"),
+                    user_id,
+                    result.get("comment"),
+                    "未通过",
+                    reject_reason,
+                    get_webui_config("record_limit", 5),
+                    result.get("time"),
+                )
                 yield event.chain_result(
-                    build_verify_message(
+                    await build_verify_message(
+                        self.context,
                         result,
                         {"passed": False, "reason": reject_reason}
                     )
@@ -106,8 +124,19 @@ class MyPlugin(Star):
                 approve=True
             )
             if success:
+                save_review_record(
+                    group_id,
+                    result.get("nickname"),
+                    user_id,
+                    result.get("comment"),
+                    "通过",
+                    "",
+                    get_webui_config("record_limit", 5),
+                    result.get("time"),
+                )
                 yield event.chain_result(
-                    build_verify_message(
+                    await build_verify_message(
+                        self.context,
                         result,
                         {"passed": True}
                     )
@@ -130,8 +159,19 @@ class MyPlugin(Star):
                     reason=reject_reason
                 )
                 if success:
+                    save_review_record(
+                        group_id,
+                        result.get("nickname"),
+                        user_id,
+                        result.get("comment"),
+                        "未通过",
+                        reject_reason,
+                        get_webui_config("record_limit", 5),
+                        result.get("time"),
+                    )
                     yield event.chain_result(
-                        build_verify_message(
+                        await build_verify_message(
+                            self.context,
                             result,
                             {"passed": False, "reason": reject_reason}
                         )
@@ -167,8 +207,19 @@ class MyPlugin(Star):
                     reason=reject_reason
                 )
                 if success:
+                    save_review_record(
+                        group_id,
+                        result.get("nickname"),
+                        user_id,
+                        comment,
+                        "未通过",
+                        reject_reason,
+                        get_webui_config("record_limit", 5),
+                        result.get("time"),
+                    )
                     yield event.chain_result(
-                        build_verify_message(
+                        await build_verify_message(
+                            self.context,
                             result,
                             {"passed": False, "reason": reject_reason}
                         )
@@ -176,8 +227,25 @@ class MyPlugin(Star):
                 else:
                     yield event.plain_result("处理入群申请失败")
             else:
-                yield event.plain_result(
-                    "⚠️ AI 验证服务暂时不可用，已跳过本次入群申请处理，请管理员手动审核。"
+                save_review_record(
+                    group_id,
+                    result.get("nickname"),
+                    user_id,
+                    comment,
+                    "跳过",
+                    "AI 验证服务暂时不可用",
+                    get_webui_config("record_limit", 5),
+                    result.get("time"),
+                )
+                yield event.chain_result(
+                    await build_verify_message(
+                        self.context,
+                        result,
+                        {
+                            "status": "skipped",
+                            "reason": "AI 验证服务暂时不可用，请管理员手动审核",
+                        },
+                    )
                 )
             return
 
@@ -199,8 +267,18 @@ class MyPlugin(Star):
             )
 
         if success:
+            save_review_record(
+                group_id,
+                result.get("nickname"),
+                user_id,
+                comment,
+                "通过" if verify_result.get("passed") is True else "未通过",
+                "" if verify_result.get("passed") is True else reason,
+                get_webui_config("record_limit", 5),
+                result.get("time"),
+            )
             yield event.chain_result(
-                build_verify_message(result, verify_result)
+                await build_verify_message(self.context, result, verify_result)
             )
         else:
             yield event.plain_result("处理入群申请失败")
@@ -214,7 +292,11 @@ class MyPlugin(Star):
         if text.startswith(("/", "验证", "群组验证", "接收申请", "名单")):
             return
 
-        if not await _is_group_admin(event):
+        is_admin = await _is_group_admin(event)
+        record_query_requested = any(
+            keyword in text for keyword in ("审核记录", "申请记录", "查看记录")
+        )
+        if not is_admin and not record_query_requested:
             yield event.plain_result("权限不足：只有群管理员或群主才能使用此功能。")
             return
 
@@ -225,6 +307,7 @@ class MyPlugin(Star):
                 "· 把 123456 加入黑名单\n"
                 "· 关闭入群验证\n"
                 "· 设置最低等级 5\n"
+                "· 查看审核记录或查看第 2 页审核记录\n"
                 "也可以使用 /验证 帮助 查看完整指令。"
             )
             return
@@ -245,6 +328,7 @@ class MyPlugin(Star):
             ClearWhitelistTool(),
             GetListsTool(),
             GetConfigTool(),
+            GetReviewRecordsTool(),
         ])
 
         llm_resp = await self.context.tool_loop_agent(
@@ -252,7 +336,8 @@ class MyPlugin(Star):
             chat_provider_id=provider_id,
             prompt=text,
             system_prompt=(
-                "你是群管助手。根据管理员的要求，调用合适的工具来配置入群验证。"
+                "你是群管助手。根据用户的要求调用合适的工具。"
+                "审核记录查询允许所有群成员使用，其他配置和名单管理操作仅限管理员。"
                 "只使用提供的工具，不要编造不存在的功能。"
             ),
             tools=tools,
@@ -297,6 +382,8 @@ class MyPlugin(Star):
             f"/群组验证 名单 白 添加 <QQ> - 加入本群白名单\n"
             f"/群组验证 名单 黑 清空 - 清空本群黑名单\n"
             f"/群组验证 名单 白 清空 - 清空本群白名单\n"
+            f"/群组验证 记录 - 查看第1页审核记录（每页5条）\n"
+            f"/群组验证 记录 <页码> - 查看指定页审核记录\n"
             "PS: 加入白名单的人会不用通过AI 审核,直接进群,谨慎加白名单❗"
         )
 
@@ -374,6 +461,45 @@ class MyPlugin(Star):
             return
 
         yield event.plain_result(f"无法识别的操作：{op}")
+
+    @group_verify.command("记录", alias={"records", "Record"})
+    async def review_records(self, event: AstrMessageEvent):
+        group_id = event.get_group_id()
+        if not group_id:
+            yield event.plain_result("该指令只能在群聊中使用")
+            return
+
+        page = 1
+        args = event.message_str.strip().split()
+        if len(args) >= 3:
+            try:
+                page = max(1, int(args[2]))
+            except ValueError:
+                yield event.plain_result("页码必须是数字，例如：/验证 记录 2")
+                return
+
+        records, total_pages = get_review_records(group_id, page=page, page_size=5)
+        if not records:
+            yield event.plain_result("没有找到对应页码的审核记录。")
+            return
+
+        lines = [f"本群审核记录（第 {page}/{total_pages} 页）"]
+        for record in records:
+            lines.append(
+                f"昵称：{record['nickname']}\n"
+                f"QQ：{record['user_id']}\n"
+                f"申请理由：{record['reason']}\n"
+                f"审核状态：{record['status']}\n"
+                f"拒绝理由：{record.get('reject_reason') or '无'}\n"
+                f"时间：{record['time']}"
+            )
+
+        if page < total_pages:
+            lines.append(f"使用 /验证 记录 {page + 1} 查看下一页")
+        else:
+            lines.append("已经是最后一页")
+
+        yield event.plain_result("\n\n".join(lines))
 
     @group_verify.group("Receive", alias={"接收申请"})
     async def receive_choice(self, event: AstrMessageEvent):
