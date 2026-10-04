@@ -18,7 +18,7 @@ RECORDS_TEMPLATE = """
     html, body { margin: 0; padding: 0; background: transparent; }
     body {
       width: fit-content;
-      padding: 28px;
+      padding: 0;
       color: #20314a;
       font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
     }
