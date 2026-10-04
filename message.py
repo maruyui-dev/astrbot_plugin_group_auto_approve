@@ -187,6 +187,46 @@ def _escape(value) -> str:
     return html.escape(str(value or ""), quote=True)
 
 
+def build_verify_chain(result, verify_result=None):
+    """Build the original text and applicant-avatar review message chain.
+
+    Args:
+        result: Parsed group application data.
+        verify_result: Optional review result returned by the AI verifier.
+
+    Returns:
+        A message component chain containing text and the applicant avatar.
+    """
+    chain = [Plain("收到一条入群申请")]
+    if result.get("avatar"):
+        chain.append(Image.fromFileSystem(result.get("avatar")))
+    chain.append(
+        Plain(
+            f"申请者: {result.get('nickname')}\n"
+            f"QQ: {result.get('user_id')}\n"
+            f"等级: {result.get('level')}\n"
+            f"申请时间: {result.get('time')}\n\n"
+            f"{result.get('comment')}"
+        )
+    )
+    if verify_result is not None:
+        if verify_result.get("passed") is True:
+            chain.append(Plain("\n\n审核结果：✅ 通过"))
+        elif verify_result.get("status") == "skipped":
+            chain.append(
+                Plain(
+                    "\n\n审核结果：⏭️ 跳过\n"
+                    f"跳过理由：{verify_result.get('reason', '验证服务暂时不可用')}"
+                )
+            )
+        else:
+            reason = verify_result.get("reason", "验证未通过")
+            chain.append(
+                Plain(f"\n\n审核结果：❌ 拒绝\n拒绝理由：{reason}")
+            )
+    return chain
+
+
 async def build_verify_message(context, result, verify_result=None):
     """Build an image-based review message with a text fallback.
 
