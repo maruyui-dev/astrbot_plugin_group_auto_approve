@@ -61,6 +61,7 @@ async def handle_group_request(event):
             user_id=user_id
         )
         avatar_path = await download_avatar(user_id)
+        group_avatar_path = await download_group_avatar(group_id)
 
     except Exception as e:
 
@@ -146,6 +147,7 @@ async def handle_group_request(event):
         "time": request_time,
         "flag": raw_event.get("flag"),
         "avatar": avatar_path,
+        "group_avatar": group_avatar_path,
         "row_event": raw_event,
         "group_id": group_id,
         "group_name": group_name,
@@ -176,4 +178,31 @@ async def download_avatar(user_id):
         logger.error(
             f"下载头像失败:{e}"
         )
+    return None
+
+
+async def download_group_avatar(group_id):
+    """Download a group avatar into the plugin avatar directory.
+
+    Args:
+        group_id: QQ group ID whose avatar should be downloaded.
+
+    Returns:
+        The downloaded avatar path, or None when the download fails.
+    """
+    if AVATAR_DIR is None:
+        logger.error("Avatar directory has not been initialized")
+        return None
+
+    avatar_url = f"https://p.qlogo.cn/gh/{group_id}/{group_id}/640/"
+    avatar_path = AVATAR_DIR / f"group_{group_id}.png"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(avatar_url) as response:
+                if response.status == 200:
+                    avatar_path.write_bytes(await response.read())
+                    return avatar_path
+    except Exception as error:
+        logger.warning(f"下载群头像失败: {error}")
     return None
