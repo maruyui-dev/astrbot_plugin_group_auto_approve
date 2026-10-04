@@ -23,5 +23,11 @@
     "type": "int",
     "default": 30,
     "hint": "AI 生成的拒绝理由超过此长度会被截断"
+  },
+  "record_limit": {
+    "description": "每个群保存的审核记录数量",
+    "type": "int",
+    "default": 5,
+    "hint": "达到上限后自动删除最早的记录，设置为 0 表示不保存记录"
   }
 }
