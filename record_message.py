@@ -136,6 +136,34 @@ def _escape(value) -> str:
     return html.escape(str(value or ""), quote=True)
 
 
+def build_review_records_text(records, page, total_pages):
+    """Build the text format used when image sending is disabled.
+
+    Args:
+        records: Review records to render, newest first.
+        page: Current one-based page number.
+        total_pages: Total number of available pages.
+
+    Returns:
+        A message component chain containing the formatted records.
+    """
+    lines = [f"本群审核记录（第 {page}/{total_pages} 页）"]
+    for record in records:
+        lines.extend(
+            [
+                "-------------------------",
+                f"申请时间: {record.get('time')}",
+                f"昵称: {record.get('nickname')}",
+                f"QQ: {record.get('user_id')}",
+                f"申请理由: {record.get('reason')}",
+                f"审核状态: {record.get('status')}",
+                f"如果拒绝在此处说明拒绝理由: {record.get('reject_reason') or ''}",
+            ]
+        )
+    lines.append("--------------------------")
+    return [Plain("\n".join(lines))]
+
+
 async def build_review_records_message(
     records,
     group_avatar_path,
