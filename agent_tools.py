@@ -7,7 +7,7 @@ from .config import (
     add_to_list,
     remove_from_list,
 )
-from .record_store import get_review_records
+from .record_store import clear_review_records, get_review_records
 from .record_message import build_review_records_message, build_review_records_text
 from .request import download_group_avatar
 
@@ -384,3 +384,24 @@ class GetReviewRecordsTool(FunctionTool):
             message_chain = build_review_records_text(records, page, total_pages)
         await event.send(MessageChain(chain=message_chain, type="tool_direct_result"))
         return "审核记录已发送。"
+
+
+class ClearReviewRecordsTool(FunctionTool):
+    """Clear the current group's review records."""
+
+    def __init__(self):
+        super().__init__(
+            name="clear_review_records",
+            description="清空当前群的全部入群审核记录及其申请者头像，仅限群主或管理员。",
+            parameters={"type": "object", "properties": {}},
+        )
+
+    async def call(self, context, **kwargs):
+        event = context.context.event
+        if not await _is_group_admin(event):
+            return "权限不足：只有群管理员或群主才能执行此操作。"
+        group_id = event.get_group_id()
+        if not group_id:
+            return "该操作只能在群聊中使用。"
+        count = clear_review_records(group_id)
+        return f"已清空本群 {count} 条审核记录及其头像。"
