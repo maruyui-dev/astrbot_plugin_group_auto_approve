@@ -51,6 +51,7 @@ _WEBUI_CONFIG = {
     "default_level_required": False,
     "ai_fail_behavior": "skip",
     "reject_reason_max_len": 30,
+    "send_images": True,
 }
 
 
