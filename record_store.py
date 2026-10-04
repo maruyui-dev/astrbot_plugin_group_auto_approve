@@ -1,4 +1,6 @@
 import json
+import shutil
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -43,6 +45,20 @@ def _save_records(records: dict[str, list[dict]]):
         logger.error(f"保存审核记录失败: {error}")
 
 
+def get_record_avatar_path(avatar_file: str | None) -> Path | None:
+    """Return the managed path for a record-specific applicant avatar.
+
+    Args:
+        avatar_file: Stored avatar filename from a review record.
+
+    Returns:
+        The avatar path, or None when the record data directory is unavailable.
+    """
+    if RECORD_FILE is None or not avatar_file:
+        return None
+    return RECORD_FILE.parent / "avatar" / Path(avatar_file).name
+
+
 def save_review_record(
     group_id,
     nickname,
@@ -52,6 +68,7 @@ def save_review_record(
     reject_reason,
     limit,
     request_time=None,
+    avatar_path=None,
 ):
     """Save one review record and remove the oldest records over the limit.
 
@@ -64,6 +81,7 @@ def save_review_record(
         reject_reason: Rejection reason, if any.
         limit: Maximum number of records to keep for this group.
         request_time: Original request time, when available.
+        avatar_path: Cached applicant avatar path, when available.
     """
     limit = max(0, int(limit))
     if limit <= 0:
@@ -71,6 +89,19 @@ def save_review_record(
 
     records = _load_records()
     group_records = records.setdefault(str(group_id), [])
+    saved_avatar_file = None
+    source_avatar = Path(avatar_path) if avatar_path else None
+    if source_avatar is None and RECORD_FILE is not None:
+        source_avatar = RECORD_FILE.parent / "avatar" / f"{user_id}.png"
+    if source_avatar and source_avatar.is_file() and RECORD_FILE is not None:
+        try:
+            avatar_dir = RECORD_FILE.parent / "avatar"
+            avatar_dir.mkdir(parents=True, exist_ok=True)
+            suffix = source_avatar.suffix or ".png"
+            saved_avatar_file = f"record_{uuid.uuid4().hex}{suffix}"
+            shutil.copy2(source_avatar, avatar_dir / saved_avatar_file)
+        except OSError as error:
+            logger.warning(f"保存审核记录头像失败: {error}")
     group_records.append(
         {
             "nickname": str(nickname or "未知用户"),
@@ -79,9 +110,27 @@ def save_review_record(
             "status": status,
             "reject_reason": str(reject_reason or ""),
             "time": request_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "avatar_file": saved_avatar_file,
         }
     )
-    records[str(group_id)] = group_records[-limit:]
+    removed_records = group_records[:-limit]
+    kept_records = group_records[-limit:]
+    kept_avatar_files = {
+        record.get("avatar_file")
+        for record in kept_records
+        if record.get("avatar_file")
+    }
+    for removed_record in removed_records:
+        avatar_file = removed_record.get("avatar_file")
+        if not avatar_file or avatar_file in kept_avatar_files:
+            continue
+        old_avatar_path = get_record_avatar_path(avatar_file)
+        if old_avatar_path:
+            try:
+                old_avatar_path.unlink(missing_ok=True)
+            except OSError as error:
+                logger.warning(f"删除过期审核记录头像失败: {error}")
+    records[str(group_id)] = kept_records
     _save_records(records)
 
 
