@@ -2,6 +2,7 @@ import base64
 import html
 import io
 import mimetypes
+import time
 from pathlib import Path
 
 from PIL import Image as PILImage
@@ -195,6 +196,9 @@ async def build_verify_message(context, result, verify_result=None):
     Returns:
         A message component chain containing the rendered card or fallback text.
     """
+    pipeline_started_at = time.perf_counter()
+    user_id = result.get("user_id")
+    logger.info(f"[图片节点] 入群审核图片流程开始，QQ={user_id}")
     passed = verify_result is not None and verify_result.get("passed") is True
     skipped = verify_result is not None and verify_result.get("status") == "skipped"
     reject_reason = "" if passed or skipped else (verify_result or {}).get(
@@ -222,6 +226,10 @@ async def build_verify_message(context, result, verify_result=None):
             mime_type = mimetypes.guess_type(avatar_file.name)[0] or "image/png"
             encoded_avatar = base64.b64encode(avatar_file.read_bytes()).decode("ascii")
             avatar_data = f"data:{mime_type};base64,{encoded_avatar}"
+            logger.info(
+                f"[图片节点] 申请者头像读取完成，QQ={user_id}，"
+                f"大小={avatar_file.stat().st_size / 1024:.1f}KB"
+            )
         except (OSError, ValueError) as error:
             logger.warning(f"读取申请者头像失败，将使用文字消息回退: {error}")
 
@@ -237,6 +245,10 @@ async def build_verify_message(context, result, verify_result=None):
                 group_avatar_file.read_bytes()
             ).decode("ascii")
             group_avatar_data = f"data:{group_mime_type};base64,{encoded_group_avatar}"
+            logger.info(
+                f"[图片节点] 群头像读取完成，QQ={user_id}，"
+                f"大小={group_avatar_file.stat().st_size / 1024:.1f}KB"
+            )
         except (OSError, ValueError) as error:
             logger.warning(f"读取群头像失败，将使用文字消息回退: {error}")
 
@@ -254,18 +266,31 @@ async def build_verify_message(context, result, verify_result=None):
             "request_time": _escape(result.get("time", "获取失败")),
         }
         try:
+            render_started_at = time.perf_counter()
+            logger.info(f"[图片节点] 开始渲染入群审核图片，QQ={user_id}")
             image_path = await html_renderer.render_custom_template(
                 CARD_TEMPLATE,
                 template_data,
                 return_url=False,
                 options={"full_page": True, "type": "png", "quality": 90},
             )
+            logger.info(
+                f"[图片节点] 入群审核图片渲染完成，QQ={user_id}，"
+                f"耗时={time.perf_counter() - render_started_at:.3f}s，path={image_path}"
+            )
             rendered_bytes = Path(image_path).read_bytes()
+            original_size = len(rendered_bytes)
             with PILImage.open(io.BytesIO(rendered_bytes)) as rendered_image:
                 rendered_image = rendered_image.convert("RGBA")
+                original_dimensions = rendered_image.size
                 alpha_box = rendered_image.getchannel("A").getbbox()
                 if alpha_box:
                     rendered_image = rendered_image.crop(alpha_box)
+                logger.info(
+                    f"[图片节点] 入群审核图片裁剪完成，QQ={user_id}，"
+                    f"原尺寸={original_dimensions}，新尺寸={rendered_image.size}，"
+                    f"裁剪框={alpha_box}"
+                )
                 background = PILImage.new("RGB", rendered_image.size, "#ffffff")
                 background.paste(
                     rendered_image,
@@ -274,9 +299,21 @@ async def build_verify_message(context, result, verify_result=None):
                 output = io.BytesIO()
                 background.save(output, format="JPEG", quality=65, optimize=True)
                 rendered_bytes = output.getvalue()
+            logger.info(
+                f"[图片节点] 入群审核图片压缩完成，QQ={user_id}，"
+                f"原始大小={original_size / 1024:.1f}KB，"
+                f"压缩后大小={len(rendered_bytes) / 1024:.1f}KB"
+            )
+            logger.info(
+                f"[图片节点] 入群审核图片消息链创建完成，QQ={user_id}，"
+                f"总耗时={time.perf_counter() - pipeline_started_at:.3f}s，准备交给AstrBot发送"
+            )
             return [Image.fromBytes(rendered_bytes)]
         except Exception as error:
-            logger.warning(f"渲染入群申请图片失败，将使用文字消息回退: {error}")
+            logger.warning(
+                f"渲染入群申请图片失败，将使用文字消息回退，QQ={user_id}，"
+                f"已耗时={time.perf_counter() - pipeline_started_at:.3f}s，错误={error}"
+            )
 
     if group_avatar_path:
         try:
