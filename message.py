@@ -263,11 +263,16 @@ async def build_verify_message(context, result, verify_result=None):
             rendered_bytes = Path(image_path).read_bytes()
             with PILImage.open(io.BytesIO(rendered_bytes)) as rendered_image:
                 rendered_image = rendered_image.convert("RGBA")
-                content_box = rendered_image.getbbox()
-                if content_box:
-                    rendered_image = rendered_image.crop(content_box)
+                alpha_box = rendered_image.getchannel("A").getbbox()
+                if alpha_box:
+                    rendered_image = rendered_image.crop(alpha_box)
+                background = PILImage.new("RGB", rendered_image.size, "#ffffff")
+                background.paste(
+                    rendered_image,
+                    mask=rendered_image.getchannel("A"),
+                )
                 output = io.BytesIO()
-                rendered_image.save(output, format="PNG")
+                background.save(output, format="JPEG", quality=65, optimize=True)
                 rendered_bytes = output.getvalue()
             return [Image.fromBytes(rendered_bytes)]
         except Exception as error:
