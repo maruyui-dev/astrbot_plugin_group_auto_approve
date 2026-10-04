@@ -272,7 +272,12 @@ async def build_verify_message(context, result, verify_result=None):
                 CARD_TEMPLATE,
                 template_data,
                 return_url=False,
-                options={"full_page": True, "type": "png", "quality": 90},
+                options={
+                    "full_page": True,
+                    "omit_background": True,
+                    "type": "png",
+                    "quality": 90,
+                },
             )
             logger.info(
                 f"[图片节点] 入群审核图片渲染完成，QQ={user_id}，"
