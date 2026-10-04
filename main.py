@@ -25,7 +25,7 @@ from .agent_tools import (
 #导入项目内部模块
 from .action import approve_group_request
 from .message import build_verify_message
-from .request import handle_group_request, set_avatar_dir
+from .request import download_group_avatar, handle_group_request, set_avatar_dir
 from .ai_verify import verify_by_llm
 from .config import (
     get_group_cfg,
@@ -40,6 +40,7 @@ from .config import (
     set_plugin_data_dir,
 )
 from .record_store import get_review_records, save_review_record, set_record_data_dir
+from .record_message import build_review_records_message
 
 
 @register(
@@ -483,23 +484,15 @@ class MyPlugin(Star):
             yield event.plain_result("没有找到对应页码的审核记录。")
             return
 
-        lines = [f"本群审核记录（第 {page}/{total_pages} 页）"]
-        for record in records:
-            lines.append(
-                f"昵称：{record['nickname']}\n"
-                f"QQ：{record['user_id']}\n"
-                f"申请理由：{record['reason']}\n"
-                f"审核状态：{record['status']}\n"
-                f"拒绝理由：{record.get('reject_reason') or '无'}\n"
-                f"时间：{record['time']}"
+        group_avatar_path = await download_group_avatar(group_id)
+        yield event.chain_result(
+            await build_review_records_message(
+                records,
+                group_avatar_path,
+                page,
+                total_pages,
             )
-
-        if page < total_pages:
-            lines.append(f"使用 /验证 记录 {page + 1} 查看下一页")
-        else:
-            lines.append("已经是最后一页")
-
-        yield event.plain_result("\n\n".join(lines))
+        )
 
     @group_verify.group("Receive", alias={"接收申请"})
     async def receive_choice(self, event: AstrMessageEvent):
