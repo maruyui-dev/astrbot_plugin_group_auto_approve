@@ -23,7 +23,7 @@ CARD_TEMPLATE = """
     }
     body {
       width: fit-content;
-      padding: 0;
+      padding: 12px;
       color: #20314a;
       font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
     }
@@ -275,6 +275,7 @@ async def build_verify_message(context, result, verify_result=None):
                 options={
                     "full_page": True,
                     "omit_background": True,
+                    "viewport_width": 704,
                     "type": "png",
                     "quality": 90,
                 },
