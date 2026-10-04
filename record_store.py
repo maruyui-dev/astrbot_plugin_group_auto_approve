@@ -152,3 +152,25 @@ def get_review_records(group_id, page=1, page_size=5):
     total_pages = (len(ordered_records) + page_size - 1) // page_size
     start = (page - 1) * page_size
     return ordered_records[start : start + page_size], total_pages
+
+
+def clear_review_records(group_id) -> int:
+    """Clear all review records and their record-specific avatars for a group.
+
+    Args:
+        group_id: QQ group ID whose records should be removed.
+
+    Returns:
+        Number of removed review records.
+    """
+    records = _load_records()
+    group_records = records.pop(str(group_id), [])
+    for record in group_records:
+        avatar_path = get_record_avatar_path(record.get("avatar_file"))
+        if avatar_path:
+            try:
+                avatar_path.unlink(missing_ok=True)
+            except OSError as error:
+                logger.warning(f"删除审核记录头像失败: {error}")
+    _save_records(records)
+    return len(group_records)
