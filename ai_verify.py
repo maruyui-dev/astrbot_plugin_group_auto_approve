@@ -1,7 +1,7 @@
 # ai_verify.py
 import json
 from astrbot.api import logger
-from .config import SYSTEM_PROMPT
+from .config import SYSTEM_PROMPT, get_webui_config
 
 
 def parse_question_answer(comment):
@@ -99,7 +99,8 @@ async def verify_by_llm(
 
     reason = data.get("reason", "") or "验证未通过"
     reason = str(reason).strip()
-    if len(reason) > 30:
-        reason = reason[:30]
+    max_len = get_webui_config("reject_reason_max_len", 30)
+    if len(reason) > max_len:
+        reason = reason[:max_len]
 
     return {"passed": False, "reason": reason}

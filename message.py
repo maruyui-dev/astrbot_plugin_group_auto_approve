@@ -27,12 +27,12 @@ def build_verify_message(result, verify_result=None):
     # 追加 AI 审核结果
     if verify_result is not None:
         if verify_result.get("passed") is True:
-            chain.append(Plain("\n\nAI 审核结果：✅ 通过"))
+            chain.append(Plain("\n\n审核结果：✅ 通过"))
         else:
             reason = verify_result.get("reason", "验证未通过")
             chain.append(
                 Plain(
-                    f"\n\nAI 审核结果：❌ 拒绝\n"
+                    f"\n\n审核结果：❌ 拒绝\n"
                     f"拒绝理由：{reason}"
                 )
             )
