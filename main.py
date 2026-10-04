@@ -20,6 +20,7 @@ from .agent_tools import (
     GetListsTool,
     GetConfigTool,
     GetReviewRecordsTool,
+    ClearReviewRecordsTool,
     _is_group_admin
 )
 #导入项目内部模块
@@ -39,7 +40,12 @@ from .config import (
     remove_from_list,
     set_plugin_data_dir,
 )
-from .record_store import get_review_records, save_review_record, set_record_data_dir
+from .record_store import (
+    clear_review_records,
+    get_review_records,
+    save_review_record,
+    set_record_data_dir,
+)
 from .record_message import build_review_records_message, build_review_records_text
 
 
@@ -346,6 +352,7 @@ class MyPlugin(Star):
             GetListsTool(),
             GetConfigTool(),
             GetReviewRecordsTool(),
+            ClearReviewRecordsTool(),
         ])
 
         llm_resp = await self.context.tool_loop_agent(
@@ -401,6 +408,7 @@ class MyPlugin(Star):
             f"/群组验证 名单 白 清空 - 清空本群白名单\n"
             f"/群组验证 记录 - 查看第1页审核记录（每页5条）\n"
             f"/群组验证 记录 <页码> - 查看指定页审核记录\n"
+            f"/群组验证 清空记录 - 清空本群全部审核记录（仅管理员）\n"
             "PS: 加入白名单的人会不用通过AI 审核,直接进群,谨慎加白名单❗"
         )
 
@@ -514,6 +522,18 @@ class MyPlugin(Star):
             yield event.chain_result(
                 build_review_records_text(records, page, total_pages)
             )
+
+    @group_verify.command("清空记录", alias={"clear_records", "ClearRecords"})
+    async def clear_records(self, event: AstrMessageEvent):
+        if not await _is_group_admin(event):
+            yield event.plain_result("权限不足：只有群管理员或群主才能使用此指令。")
+            return
+        group_id = event.get_group_id()
+        if not group_id:
+            yield event.plain_result("该指令只能在群聊中使用")
+            return
+        count = clear_review_records(group_id)
+        yield event.plain_result(f"已清空本群 {count} 条审核记录及其头像。")
 
     @group_verify.group("Receive", alias={"接收申请"})
     async def receive_choice(self, event: AstrMessageEvent):
