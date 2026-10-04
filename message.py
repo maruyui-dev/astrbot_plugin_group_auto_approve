@@ -1,8 +1,10 @@
 import base64
 import html
+import io
 import mimetypes
 from pathlib import Path
 
+from PIL import Image as PILImage
 from astrbot.api import html_renderer, logger
 from astrbot.api.message_components import Image, Plain
 
@@ -256,10 +258,18 @@ async def build_verify_message(context, result, verify_result=None):
                 CARD_TEMPLATE,
                 template_data,
                 return_url=False,
-                options={"full_page": False, "type": "jpeg", "quality": 70},
+                options={"full_page": True, "type": "png", "quality": 90},
             )
-            image_bytes = Path(image_path).read_bytes()
-            return [Image.fromBytes(image_bytes)]
+            rendered_bytes = Path(image_path).read_bytes()
+            with PILImage.open(io.BytesIO(rendered_bytes)) as rendered_image:
+                rendered_image = rendered_image.convert("RGBA")
+                content_box = rendered_image.getbbox()
+                if content_box:
+                    rendered_image = rendered_image.crop(content_box)
+                output = io.BytesIO()
+                rendered_image.save(output, format="PNG")
+                rendered_bytes = output.getvalue()
+            return [Image.fromBytes(rendered_bytes)]
         except Exception as error:
             logger.warning(f"渲染入群申请图片失败，将使用文字消息回退: {error}")
 
