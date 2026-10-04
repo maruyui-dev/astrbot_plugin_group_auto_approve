@@ -1,0 +1,27 @@
+{
+  "default_min_level": {
+    "description": "默认最低等级",
+    "type": "int",
+    "default": 5,
+    "hint": "新群首次加载时使用的默认最低等级"
+  },
+  "default_level_required": {
+    "description": "默认开启等级限制",
+    "type": "bool",
+    "default": false,
+    "hint": "新群首次加载时是否默认开启等级限制"
+  },
+  "ai_fail_behavior": {
+    "description": "AI 验证失败时的行为",
+    "type": "string",
+    "default": "skip",
+    "options": ["skip", "reject"],
+    "hint": "skip=跳过不处理，reject=直接拒绝"
+  },
+  "reject_reason_max_len": {
+    "description": "拒绝理由最大长度",
+    "type": "int",
+    "default": 30,
+    "hint": "AI 生成的拒绝理由超过此长度会被截断"
+  }
+}
