@@ -6,6 +6,8 @@ from .config import (
     remove_from_list,
 )
 from .record_store import get_review_records
+from .record_message import build_review_records_message
+from .request import download_group_avatar
 
 
 async def _is_group_admin(event) -> bool:
@@ -340,7 +342,7 @@ class GetReviewRecordsTool(FunctionTool):
     def __init__(self):
         super().__init__(
             name="get_review_records",
-            description="查询当前群的入群审核记录，每页最多返回5条，page从1开始。",
+            description="查询当前群的入群审核记录，并以图片发送，每页最多5条，page从1开始。",
             parameters={
                 "type": "object",
                 "properties": {
@@ -368,15 +370,11 @@ class GetReviewRecordsTool(FunctionTool):
         if not records:
             return "没有找到对应页码的审核记录。"
 
-        lines = [f"本群审核记录（第 {page}/{total_pages} 页）"]
-        for record in records:
-            lines.append(
-                f"昵称：{record['nickname']}\n"
-                f"QQ：{record['user_id']}\n"
-                f"申请理由：{record['reason']}\n"
-                f"审核状态：{record['status']}\n"
-                f"拒绝理由：{record.get('reject_reason') or '无'}\n"
-                f"时间：{record['time']}"
-            )
-
-        return "\n\n".join(lines)
+        group_avatar_path = await download_group_avatar(group_id)
+        message_chain = await build_review_records_message(
+            records,
+            group_avatar_path,
+            page,
+            total_pages,
+        )
+        return event.chain_result(message_chain)
