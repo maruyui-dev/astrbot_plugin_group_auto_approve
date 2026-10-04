@@ -189,9 +189,10 @@ async def build_review_records_message(
                 "navigation": navigation,
             },
             return_url=False,
-            options={"full_page": False, "type": "png", "quality": 90},
+            options={"full_page": False, "type": "jpeg", "quality": 70},
         )
-        return [Image.fromFileSystem(image_path)]
+        image_bytes = Path(image_path).read_bytes()
+        return [Image.fromBytes(image_bytes)]
     except Exception as error:
         logger.warning(f"渲染审核记录图片失败，将使用文字消息回退: {error}")
         lines = [f"本群审核记录（第 {page}/{total_pages} 页）"]
