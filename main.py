@@ -24,7 +24,7 @@ from .agent_tools import (
 )
 #导入项目内部模块
 from .action import approve_group_request
-from .message import build_verify_message
+from .message import build_verify_chain, build_verify_message
 from .request import download_group_avatar, handle_group_request, set_avatar_dir
 from .ai_verify import verify_by_llm
 from .config import (
@@ -40,7 +40,23 @@ from .config import (
     set_plugin_data_dir,
 )
 from .record_store import get_review_records, save_review_record, set_record_data_dir
-from .record_message import build_review_records_message
+from .record_message import build_review_records_message, build_review_records_text
+
+
+async def build_application_message(context, result, verify_result=None):
+    """Build an application notification according to the image setting.
+
+    Args:
+        context: AstrBot plugin context.
+        result: Parsed group application data.
+        verify_result: Optional review result.
+
+    Returns:
+        A message component chain for the configured output mode.
+    """
+    if get_webui_config("send_images", True):
+        return await build_verify_message(context, result, verify_result)
+    return build_verify_chain(result, verify_result)
 
 
 @register(
@@ -106,7 +122,7 @@ class MyPlugin(Star):
                     result.get("time"),
                 )
                 yield event.chain_result(
-                    await build_verify_message(
+                    await build_application_message(
                         self.context,
                         result,
                         {"passed": False, "reason": reject_reason}
@@ -136,7 +152,7 @@ class MyPlugin(Star):
                     result.get("time"),
                 )
                 yield event.chain_result(
-                    await build_verify_message(
+                    await build_application_message(
                         self.context,
                         result,
                         {"passed": True}
@@ -171,7 +187,7 @@ class MyPlugin(Star):
                         result.get("time"),
                     )
                     yield event.chain_result(
-                        await build_verify_message(
+                        await build_application_message(
                             self.context,
                             result,
                             {"passed": False, "reason": reject_reason}
@@ -219,7 +235,7 @@ class MyPlugin(Star):
                         result.get("time"),
                     )
                     yield event.chain_result(
-                        await build_verify_message(
+                        await build_application_message(
                             self.context,
                             result,
                             {"passed": False, "reason": reject_reason}
@@ -239,7 +255,7 @@ class MyPlugin(Star):
                     result.get("time"),
                 )
                 yield event.chain_result(
-                    await build_verify_message(
+                    await build_application_message(
                         self.context,
                         result,
                         {
@@ -279,7 +295,7 @@ class MyPlugin(Star):
                 result.get("time"),
             )
             yield event.chain_result(
-                await build_verify_message(self.context, result, verify_result)
+                await build_application_message(self.context, result, verify_result)
             )
         else:
             yield event.plain_result("处理入群申请失败")
@@ -484,15 +500,20 @@ class MyPlugin(Star):
             yield event.plain_result("没有找到对应页码的审核记录。")
             return
 
-        group_avatar_path = await download_group_avatar(group_id)
-        yield event.chain_result(
-            await build_review_records_message(
-                records,
-                group_avatar_path,
-                page,
-                total_pages,
+        if get_webui_config("send_images", True):
+            group_avatar_path = await download_group_avatar(group_id)
+            yield event.chain_result(
+                await build_review_records_message(
+                    records,
+                    group_avatar_path,
+                    page,
+                    total_pages,
+                )
             )
-        )
+        else:
+            yield event.chain_result(
+                build_review_records_text(records, page, total_pages)
+            )
 
     @group_verify.group("Receive", alias={"接收申请"})
     async def receive_choice(self, event: AstrMessageEvent):
