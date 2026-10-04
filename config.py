@@ -1,11 +1,22 @@
 import json
-import os
+from pathlib import Path
+
 from astrbot.api import logger
 
-CONFIG_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "runtime_config.json"
-)
+CONFIG_FILE: Path | None = None
+
+
+def set_plugin_data_dir(data_dir: str | Path):
+    """Set the directory used for persistent plugin configuration.
+
+    Args:
+        data_dir: AstrBot-managed directory for this plugin's data.
+    """
+    global CONFIG_FILE
+    CONFIG_FILE = Path(data_dir) / "runtime_config.json"
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+
 # 定义常量区
 
 SYSTEM_PROMPT = """你是一个入群验证助手。你会收到以下信息：
@@ -88,7 +99,10 @@ def get_group_cfg(group_id):
 
 def load_config():
     data = json.loads(json.dumps(DEFAULTS))
-    if os.path.exists(CONFIG_FILE):
+    if CONFIG_FILE is None:
+        logger.error("Plugin data directory has not been initialized")
+        return data
+    if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
@@ -109,8 +123,11 @@ def load_config():
 
 def save_config(data):
     """修改后调用：把当前配置写回 JSON"""
+    if CONFIG_FILE is None:
+        logger.error("Plugin data directory has not been initialized")
+        return
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        with CONFIG_FILE.open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"写入 runtime_config.json 失败: {e}")
