@@ -1,8 +1,11 @@
 # Byte-compiled / optimized / DLL files
-avatar/
 __pycache__/
 *.py[codz]
 *$py.class
+
+# 运行时配置与缓存
+runtime_config.json
+avatar/
 
 # C extensions
 *.so
