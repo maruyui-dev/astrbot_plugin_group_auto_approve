@@ -2,7 +2,7 @@
   <h1>AstrBot QQ Group Auto Approval Plugin</h1>
   <p>An intelligent QQ group automatic approval plugin based on AstrBot and OneBot V11.</p>
   <p>
-    <a href="README.md">简体中文</a> · <a href="README_EN.md">English</a>
+    <a href="README_CN.md">简体中文</a> · <a href="README_EN.md">English</a>
   </p>
   <p>
     <img src="https://img.shields.io/badge/AstrBot%20Plugin-blue" alt="AstrBot Plugin">
