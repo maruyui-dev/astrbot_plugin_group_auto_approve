@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image as PILImage
 from astrbot.api import html_renderer, logger
 from astrbot.api.message_components import Image, Plain
+from .record_store import get_record_avatar_path
 
 RECORDS_TEMPLATE = """
 <html>
@@ -18,7 +19,7 @@ RECORDS_TEMPLATE = """
     html, body { margin: 0; padding: 0; background: transparent; }
     body {
       width: fit-content;
-      padding: 12px;
+      padding: 8px;
       color: #20314a;
       font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
     }
@@ -65,12 +66,14 @@ RECORDS_TEMPLATE = """
       place-items: center;
       width: 48px;
       height: 48px;
+      overflow: hidden;
       border-radius: 15px;
       background: linear-gradient(145deg, #d9e3ff, #9bb4ff);
       color: #ffffff;
       font-size: 18px;
       font-weight: 500;
     }
+    img.applicant-avatar { object-fit: cover; }
     .identity { min-width: 0; }
     .name-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px; }
     .name { font-size: 16px; font-weight: 500; }
@@ -107,7 +110,11 @@ RECORDS_TEMPLATE = """
     <div class="records">
       {% for record in records %}
       <article class="record">
+        {% if record.avatar_data %}
+        <img class="applicant-avatar" src="{{ record.avatar_data }}" alt="申请者头像">
+        {% else %}
         <div class="applicant-avatar">{{ record.initial }}</div>
+        {% endif %}
         <div class="identity">
           <div class="name-line"><span class="name">{{ record.nickname }}</span><span class="qq">QQ：{{ record.user_id }}</span></div>
           <p class="reason">申请理由：{{ record.reason }}</p>
@@ -171,9 +178,23 @@ async def build_review_records_message(
         status_class = {"通过": "passed", "未通过": "rejected", "跳过": "skipped"}
         template_records = []
         for record in records:
+            avatar_data = ""
+            avatar_path = get_record_avatar_path(record.get("avatar_file"))
+            if avatar_path and avatar_path.is_file():
+                try:
+                    mime_type = mimetypes.guess_type(avatar_path.name)[0] or "image/png"
+                    encoded_avatar = base64.b64encode(
+                        avatar_path.read_bytes()
+                    ).decode("ascii")
+                    avatar_data = f"data:{mime_type};base64,{encoded_avatar}"
+                except (OSError, ValueError) as error:
+                    logger.warning(
+                        f"读取审核记录申请者头像失败，将使用首字占位: {error}"
+                    )
             template_records.append(
                 {
                     "initial": _escape(record.get("nickname", "未知用户")[:1]),
+                    "avatar_data": avatar_data,
                     "nickname": _escape(record.get("nickname", "未知用户")),
                     "user_id": _escape(record.get("user_id", "未知")),
                     "reason": _escape(record.get("reason", "")),
