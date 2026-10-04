@@ -202,7 +202,12 @@ async def build_review_records_message(
                 "navigation": navigation,
             },
             return_url=False,
-            options={"full_page": True, "type": "png", "quality": 90},
+            options={
+                "full_page": True,
+                "omit_background": True,
+                "type": "png",
+                "quality": 90,
+            },
         )
         logger.info(
             f"[图片节点] 审核记录图片渲染完成，耗时={time.perf_counter() - render_started_at:.3f}s，"
