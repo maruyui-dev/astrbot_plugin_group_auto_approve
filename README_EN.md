@@ -16,7 +16,7 @@
 
 AstrBot QQ Group Auto Approval Plugin is an intelligent moderation plugin designed for QQ group management.
 
-The plugin listens for group join request events through the OneBot V11 protocol and combines a rule system, AI-powered review, database records, and Agent-based intelligent tool calling to automate group management.
+The plugin listens for group join request events through the OneBot V11 protocol and combines a rule system, AI-powered review, and Agent-based intelligent tool calling to automate group management.
 
 ## Core Features
 
@@ -54,19 +54,27 @@ Supports:
 - Verification answer analysis
 - Intelligent review suggestions
 
-### 3. Review History Database
+### 3. Review History
 
-The plugin stores review history, including:
+The plugin stores per-group application review records, including the applicant's nickname, QQ ID, application reason, review status, rejection reason, and time.
 
-- Applicant QQ ID
-- Application time
-- Verification content
-- Review result
-- Review reason
+- Use `/验证 记录` to view page 1.
+- Use `/验证 记录 <page>` to view a specific page.
+- Each page contains up to 5 records.
+- The oldest record is removed automatically when the configured limit is reached.
+- Group members can view records, and the Agent can query them using natural language.
 
-This makes it easy for administrators to query previous applications.
+### 4. Image Review Notifications
 
-### 4. Plugin Configuration Interface
+When a group join request is detected, the plugin renders the application as an image and sends it to the group.
+
+The image includes the applicant's QQ avatar, nickname, QQ ID, application reason, request time, review status, and rejection reason when applicable. Passed reviews use green, rejected reviews use red, and skipped reviews use yellow.
+
+If image rendering is unavailable, the plugin automatically falls back to a text message.
+
+![Group review image example](review_example.png)
+
+### 5. Plugin Configuration Interface
 
 The plugin provides configuration options for:
 
@@ -75,7 +83,7 @@ The plugin provides configuration options for:
 - Configuring the action taken when AI review fails: `Skip` or `Reject`
 - Customizing the maximum length of rejection reasons
 
-### 5. Agent-Based Intelligent Management
+### 6. Agent-Based Intelligent Management
 
 The plugin integrates Agent functionality.
 
@@ -115,11 +123,7 @@ The Agent will automatically:
 Show the users currently on the whitelist.
 ```
 
-The Agent will automatically:
-
-1. Query the database
-2. Analyze the review records
-3. Summarize the reasons for rejected applications
+The Agent automatically calls the list management tools and returns the current whitelist.
 
 ## Configuration
 
@@ -148,8 +152,7 @@ astrbot_plugin_group_auto_approve
 ├── metadata.yaml
 ├── README.md
 ├── logo.png
-├── database/
-├── avatar/
+├── review_example.png
 └── web/
 ```
 
