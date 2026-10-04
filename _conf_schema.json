@@ -29,5 +29,11 @@
     "type": "int",
     "default": 5,
     "hint": "达到上限后自动删除最早的记录，设置为 0 表示不保存记录"
+  },
+  "send_images": {
+    "description": "发送审核图片",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后发送图片，关闭后使用文字消息链"
   }
 }
