@@ -1,12 +1,14 @@
 from astrbot.api import FunctionTool, logger
+from astrbot.core.message.message_event_result import MessageChain
 from .config import (
     get_group_cfg,
+    get_webui_config,
     save_all,
     add_to_list,
     remove_from_list,
 )
 from .record_store import get_review_records
-from .record_message import build_review_records_message
+from .record_message import build_review_records_message, build_review_records_text
 from .request import download_group_avatar
 
 
@@ -359,8 +361,7 @@ class GetReviewRecordsTool(FunctionTool):
         event = context.context.event
         group_id = event.get_group_id()
         if not group_id:
-            yield "该功能只能在群聊中使用。"
-            return
+            return "该功能只能在群聊中使用。"
 
         page = max(1, int(kwargs.get("page", 1)))
         records, total_pages = get_review_records(
@@ -369,15 +370,17 @@ class GetReviewRecordsTool(FunctionTool):
             page_size=5,
         )
         if not records:
-            yield "没有找到对应页码的审核记录。"
-            return
+            return "没有找到对应页码的审核记录。"
 
-        group_avatar_path = await download_group_avatar(group_id)
-        message_chain = await build_review_records_message(
-            records,
-            group_avatar_path,
-            page,
-            total_pages,
-        )
-        yield event.chain_result(message_chain)
-        yield "审核记录图片已发送。"
+        if get_webui_config("send_images", True):
+            group_avatar_path = await download_group_avatar(group_id)
+            message_chain = await build_review_records_message(
+                records,
+                group_avatar_path,
+                page,
+                total_pages,
+            )
+        else:
+            message_chain = build_review_records_text(records, page, total_pages)
+        await event.send(MessageChain(chain=message_chain, type="tool_direct_result"))
+        return "审核记录已发送。"
