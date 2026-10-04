@@ -359,7 +359,8 @@ class GetReviewRecordsTool(FunctionTool):
         event = context.context.event
         group_id = event.get_group_id()
         if not group_id:
-            return "该功能只能在群聊中使用。"
+            yield "该功能只能在群聊中使用。"
+            return
 
         page = max(1, int(kwargs.get("page", 1)))
         records, total_pages = get_review_records(
@@ -368,7 +369,8 @@ class GetReviewRecordsTool(FunctionTool):
             page_size=5,
         )
         if not records:
-            return "没有找到对应页码的审核记录。"
+            yield "没有找到对应页码的审核记录。"
+            return
 
         group_avatar_path = await download_group_avatar(group_id)
         message_chain = await build_review_records_message(
@@ -377,4 +379,5 @@ class GetReviewRecordsTool(FunctionTool):
             page,
             total_pages,
         )
-        return event.chain_result(message_chain)
+        yield event.chain_result(message_chain)
+        yield "审核记录图片已发送。"
