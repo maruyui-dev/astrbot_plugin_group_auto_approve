@@ -3,7 +3,7 @@ import html
 import mimetypes
 from pathlib import Path
 
-from astrbot.api import logger
+from astrbot.api import html_renderer, logger
 from astrbot.api.message_components import Image, Plain
 
 CARD_TEMPLATE = """
@@ -208,7 +208,7 @@ async def build_verify_message(context, result, verify_result=None):
             "request_time": _escape(result.get("time", "获取失败")),
         }
         try:
-            image_path = await context.html_renderer.render_custom_template(
+            image_path = await html_renderer.render_custom_template(
                 CARD_TEMPLATE,
                 template_data,
                 return_url=False,
