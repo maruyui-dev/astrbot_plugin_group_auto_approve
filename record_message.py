@@ -157,9 +157,10 @@ def build_review_records_text(records, page, total_pages):
                 f"QQ: {record.get('user_id')}",
                 f"申请理由: {record.get('reason')}",
                 f"审核状态: {record.get('status')}",
-                f"如果拒绝在此处说明拒绝理由: {record.get('reject_reason') or ''}",
             ]
         )
+        if record.get("status") == "未通过":
+            lines.append(f"拒绝理由: {record.get('reject_reason') or '无'}")
     lines.append("--------------------------")
     return [Plain("\n".join(lines))]
 
