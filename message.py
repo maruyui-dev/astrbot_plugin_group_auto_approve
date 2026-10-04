@@ -23,7 +23,7 @@ CARD_TEMPLATE = """
     }
     body {
       width: fit-content;
-      padding: 12px;
+      padding: 8px;
       color: #20314a;
       font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
     }
