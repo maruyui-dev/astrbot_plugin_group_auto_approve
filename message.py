@@ -256,9 +256,10 @@ async def build_verify_message(context, result, verify_result=None):
                 CARD_TEMPLATE,
                 template_data,
                 return_url=False,
-                options={"full_page": False, "type": "png", "quality": 90},
+                options={"full_page": False, "type": "jpeg", "quality": 70},
             )
-            return [Image.fromFileSystem(image_path)]
+            image_bytes = Path(image_path).read_bytes()
+            return [Image.fromBytes(image_bytes)]
         except Exception as error:
             logger.warning(f"渲染入群申请图片失败，将使用文字消息回退: {error}")
 
