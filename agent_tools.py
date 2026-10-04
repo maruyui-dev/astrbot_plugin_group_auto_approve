@@ -5,6 +5,7 @@ from .config import (
     add_to_list,
     remove_from_list,
 )
+from .record_store import get_review_records
 
 
 async def _is_group_admin(event) -> bool:
@@ -331,3 +332,51 @@ class GetConfigTool(FunctionTool):
             f"黑名单：{len(cfg.get('BLACKLIST', []))} 个\n"
             f"白名单：{len(cfg.get('WHITELIST', []))} 个"
         )
+
+
+class GetReviewRecordsTool(FunctionTool):
+    """查询当前群的入群审核记录。"""
+
+    def __init__(self):
+        super().__init__(
+            name="get_review_records",
+            description="查询当前群的入群审核记录，每页最多返回5条，page从1开始。",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "page": {
+                        "type": "integer",
+                        "description": "页码，从1开始，默认第1页",
+                    }
+                },
+                "required": [],
+            },
+        )
+
+    async def call(self, context, **kwargs):
+        event = context.context.event
+        group_id = event.get_group_id()
+        if not group_id:
+            return "该功能只能在群聊中使用。"
+
+        page = max(1, int(kwargs.get("page", 1)))
+        records, total_pages = get_review_records(
+            group_id,
+            page=page,
+            page_size=5,
+        )
+        if not records:
+            return "没有找到对应页码的审核记录。"
+
+        lines = [f"本群审核记录（第 {page}/{total_pages} 页）"]
+        for record in records:
+            lines.append(
+                f"昵称：{record['nickname']}\n"
+                f"QQ：{record['user_id']}\n"
+                f"申请理由：{record['reason']}\n"
+                f"审核状态：{record['status']}\n"
+                f"拒绝理由：{record.get('reject_reason') or '无'}\n"
+                f"时间：{record['time']}"
+            )
+
+        return "\n\n".join(lines)
