@@ -1,6 +1,5 @@
 from datetime import datetime
 from pathlib import Path
-import time
 
 import aiohttp
 from astrbot.api import logger
@@ -106,8 +105,6 @@ async def handle_group_request(event):
             "_get_group_notice",
             group_id=group_id
         )
-        logger.info(f"群公告原始返回: {notices!r}")
-
         if notices:
             # 按 publish_time 升序排序：索引 0 是最早，最后是最新
             sorted_notices = sorted(
@@ -135,10 +132,6 @@ async def handle_group_request(event):
     except Exception as e:
         logger.error(f"获取群公告失败: {e}")
 
-    logger.info(f"群名称: {group_name!r}")
-    logger.info(f"最新群公告: {group_notice!r}")
-    logger.info(f"最早群公告: {group_notice_first!r}")
-
     return {
         "success": True,
         "user_id": user_id,
@@ -157,8 +150,6 @@ async def handle_group_request(event):
     }
 
 async def download_avatar(user_id):
-    started_at = time.perf_counter()
-    logger.info(f"[图片节点] 开始下载申请者头像，QQ={user_id}")
     avatar_url = (
         f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=640"
     )
@@ -176,15 +167,9 @@ async def download_avatar(user_id):
                     data = await response.read()
                     with avatar_path.open("wb") as f:
                         f.write(data)
-                    logger.info(
-                        f"[图片节点] 申请者头像下载完成，QQ={user_id}，"
-                        f"状态码={response.status}，大小={len(data) / 1024:.1f}KB，"
-                        f"耗时={time.perf_counter() - started_at:.3f}s"
-                    )
                     return avatar_path
                 logger.warning(
-                    f"[图片节点] 申请者头像下载失败，QQ={user_id}，"
-                    f"状态码={response.status}，耗时={time.perf_counter() - started_at:.3f}s"
+                    f"申请者头像下载失败，QQ={user_id}，状态码={response.status}"
                 )
     except Exception as e:
         logger.error(
@@ -206,8 +191,6 @@ async def download_group_avatar(group_id):
         logger.error("Avatar directory has not been initialized")
         return None
 
-    started_at = time.perf_counter()
-    logger.info(f"[图片节点] 开始下载群头像，群号={group_id}")
     avatar_url = f"https://p.qlogo.cn/gh/{group_id}/{group_id}/640/"
     avatar_path = AVATAR_DIR / f"group_{group_id}.png"
 
@@ -217,15 +200,9 @@ async def download_group_avatar(group_id):
                 if response.status == 200:
                     data = await response.read()
                     avatar_path.write_bytes(data)
-                    logger.info(
-                        f"[图片节点] 群头像下载完成，群号={group_id}，"
-                        f"状态码={response.status}，大小={len(data) / 1024:.1f}KB，"
-                        f"耗时={time.perf_counter() - started_at:.3f}s"
-                    )
                     return avatar_path
                 logger.warning(
-                    f"[图片节点] 群头像下载失败，群号={group_id}，"
-                    f"状态码={response.status}，耗时={time.perf_counter() - started_at:.3f}s"
+                    f"群头像下载失败，群号={group_id}，状态码={response.status}"
                 )
     except Exception as error:
         logger.warning(f"下载群头像失败: {error}")
