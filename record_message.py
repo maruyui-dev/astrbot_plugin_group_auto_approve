@@ -264,7 +264,11 @@ async def build_review_records_message(
             f"[图片节点] 审核记录图片渲染完成，耗时={time.perf_counter() - render_started_at:.3f}s，"
             f"path={image_path}"
         )
-        rendered_bytes = Path(image_path).read_bytes()
+        rendered_image_file = Path(image_path)
+        try:
+            rendered_bytes = rendered_image_file.read_bytes()
+        finally:
+            rendered_image_file.unlink(missing_ok=True)
         original_size = len(rendered_bytes)
         with PILImage.open(io.BytesIO(rendered_bytes)) as rendered_image:
             rendered_image = rendered_image.convert("RGBA")
