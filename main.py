@@ -1,3 +1,6 @@
+import asyncio
+import time
+
 #导入Astrbot模块以及第三方模块
 from encodings.aliases import aliases
 from datetime import datetime
@@ -85,6 +88,8 @@ class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
         super().__init__(context, config)
         self.plugin_config = config or {}
+        self._agent_seen_events = {}
+        self._agent_dedup_lock = asyncio.Lock()
 
     async def initialize(self):
         from .config import set_webui_config
@@ -379,6 +384,32 @@ class MyPlugin(Star):
     async def agent_listener(self, event: AstrMessageEvent):
         if not event.is_at_or_wake_command:
             return
+
+        raw_event = event.message_obj.raw_message
+        now = time.monotonic()
+        raw_message_id = raw_event.get("message_id") or raw_event.get("message_seq")
+        if raw_message_id is not None:
+            event_key = (
+                f"{event.get_platform_id()}:{raw_event.get('self_id')}:"
+                f"message:{raw_message_id}"
+            )
+            dedup_ttl = 60
+        else:
+            event_key = (
+                f"{event.get_platform_id()}:{event.get_group_id()}:"
+                f"{event.get_sender_id()}:{event.message_str}:{raw_event.get('time')}"
+            )
+            dedup_ttl = 3
+        async with self._agent_dedup_lock:
+            self._agent_seen_events = {
+                key: (timestamp, ttl)
+                for key, (timestamp, ttl) in self._agent_seen_events.items()
+                if now - timestamp < ttl
+            }
+            previous_event = self._agent_seen_events.get(event_key)
+            if previous_event and now - previous_event[0] < previous_event[1]:
+                return
+            self._agent_seen_events[event_key] = (now, dedup_ttl)
 
         text = event.message_str.strip()
         if text.startswith(("/", "验证", "群组验证", "接收申请", "名单")):
