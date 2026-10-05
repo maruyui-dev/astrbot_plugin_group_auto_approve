@@ -61,6 +61,9 @@ from .record_store import (
 )
 from .record_message import build_review_records_message, build_review_records_text
 
+_SEEN_EVENTS = {}
+_EVENT_DEDUP_LOCK = asyncio.Lock()
+
 
 async def build_application_message(context, result, verify_result=None):
     """Build an application notification according to the image setting.
@@ -88,8 +91,60 @@ class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
         super().__init__(context, config)
         self.plugin_config = config or {}
-        self._agent_seen_events = {}
-        self._agent_dedup_lock = asyncio.Lock()
+
+    async def _is_duplicate_event(self, event: AstrMessageEvent, scope: str) -> bool:
+        """Return whether an event was already handled recently.
+
+        Args:
+            event: AstrBot event to identify.
+            scope: Independent handler scope, such as ``main`` or ``agent``.
+
+        Returns:
+            True when the same platform event was already seen in this scope.
+        """
+        global _SEEN_EVENTS
+        raw_event = event.message_obj.raw_message
+        now = time.monotonic()
+        event_id = (
+            raw_event.get("message_id")
+            or raw_event.get("message_seq")
+            or raw_event.get("request_id")
+            or raw_event.get("flag")
+        )
+        event_keys = [
+            (
+                f"{scope}:content:{event.get_platform_id()}:"
+                f"{raw_event.get('self_id')}:{event.get_group_id()}:"
+                f"{event.get_sender_id()}:{raw_event.get('post_type')}:"
+                f"{raw_event.get('request_type') or raw_event.get('notice_type')}:"
+                f"{raw_event.get('sub_type')}:{event.message_str.strip()}",
+                5,
+            )
+        ]
+        if event_id is not None:
+            event_keys.append(
+                (
+                    f"{scope}:id:{event.get_platform_id()}:"
+                    f"{raw_event.get('self_id')}:{event_id}",
+                    60,
+                )
+            )
+
+        async with _EVENT_DEDUP_LOCK:
+            _SEEN_EVENTS = {
+                key: (timestamp, ttl)
+                for key, (timestamp, ttl) in _SEEN_EVENTS.items()
+                if now - timestamp < ttl
+            }
+            if any(
+                (previous_event := _SEEN_EVENTS.get(event_key))
+                and now - previous_event[0] < previous_event[1]
+                for event_key, _ in event_keys
+            ):
+                return True
+            for event_key, dedup_ttl in event_keys:
+                _SEEN_EVENTS[event_key] = (now, dedup_ttl)
+        return False
 
     async def initialize(self):
         from .config import set_webui_config
@@ -106,6 +161,8 @@ class MyPlugin(Star):
     #=====================================================#
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def listen_event(self, event: AstrMessageEvent):
+        if await self._is_duplicate_event(event, "main"):
+            return
         raw_event = event.message_obj.raw_message
         if (
             raw_event.get("post_type") == "notice"
@@ -385,31 +442,8 @@ class MyPlugin(Star):
         if not event.is_at_or_wake_command:
             return
 
-        raw_event = event.message_obj.raw_message
-        now = time.monotonic()
-        raw_message_id = raw_event.get("message_id") or raw_event.get("message_seq")
-        if raw_message_id is not None:
-            event_key = (
-                f"{event.get_platform_id()}:{raw_event.get('self_id')}:"
-                f"message:{raw_message_id}"
-            )
-            dedup_ttl = 60
-        else:
-            event_key = (
-                f"{event.get_platform_id()}:{event.get_group_id()}:"
-                f"{event.get_sender_id()}:{event.message_str}:{raw_event.get('time')}"
-            )
-            dedup_ttl = 3
-        async with self._agent_dedup_lock:
-            self._agent_seen_events = {
-                key: (timestamp, ttl)
-                for key, (timestamp, ttl) in self._agent_seen_events.items()
-                if now - timestamp < ttl
-            }
-            previous_event = self._agent_seen_events.get(event_key)
-            if previous_event and now - previous_event[0] < previous_event[1]:
-                return
-            self._agent_seen_events[event_key] = (now, dedup_ttl)
+        if await self._is_duplicate_event(event, "agent"):
+            return
 
         text = event.message_str.strip()
         if text.startswith(("/", "验证", "群组验证", "接收申请", "名单")):
