@@ -19,7 +19,7 @@ RECORDS_TEMPLATE = """
     html, body { margin: 0; padding: 0; background: transparent; height: fit-content; min-height: 0; }
     body {
       width: fit-content;
-      padding: 72px;
+      padding: 0;
       color: #1B1A2E;
       font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
     }
@@ -383,7 +383,7 @@ async def build_review_records_message(
             options={
                 "full_page": True,
                 "omit_background": True,
-                "viewport_width": 920,
+                "viewport_width": 760,
                 "type": "png",
                 "quality": 90,
             },
