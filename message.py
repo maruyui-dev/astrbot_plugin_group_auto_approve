@@ -243,7 +243,7 @@ LEAVE_TEMPLATE = """
       <p class="info-title">退群时间</p>
       <div class="time-box">{{ leave_time }}</div>
       {% if operator_id %}
-      <div class="operator">操作人 QQ：{{ operator_id }}<br>该成员被管理员移出群聊</div>
+      <div class="operator">操作人：{{ operator_nickname }}（QQ：{{ operator_id }}）<br>该成员被管理员移出群聊</div>
       {% endif %}
       <div class="footer"><span>群号：{{ group_id }}</span><span class="brand">QQ群自动管理</span></div>
     </main>
@@ -315,7 +315,10 @@ def build_leave_text(result):
         f"退群者QQ: {result['user_id']}",
     ]
     if result.get("operator_id"):
-        lines.append(f"操作人QQ: {result['operator_id']}")
+        lines.append(
+            f"操作人昵称: {result.get('operator_nickname', '未知用户')}\n"
+            f"操作人QQ: {result['operator_id']}"
+        )
     lines.extend(
         [
             f"退群时间: {result['leave_time']}",
@@ -357,6 +360,9 @@ async def build_leave_message(result):
                 "leave_time": _escape(result["leave_time"]),
                 "event_label": _escape(result["event_label"]),
                 "operator_id": _escape(result.get("operator_id", "")),
+                "operator_nickname": _escape(
+                    result.get("operator_nickname", "未知用户")
+                ),
                 "status_color": result["status_color"],
                 "status_background": result["status_background"],
             },
