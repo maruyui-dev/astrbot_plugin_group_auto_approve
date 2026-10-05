@@ -16,7 +16,7 @@ RECORDS_TEMPLATE = """
   <meta charset="UTF-8">
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; background: transparent; }
+    html, body { margin: 0; padding: 0; background: transparent; height: fit-content; min-height: 0; }
     body {
       width: fit-content;
       padding: 8px;
