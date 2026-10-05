@@ -31,7 +31,6 @@ CARD_TEMPLATE = """
     }
     .card {
       width: 680px;
-      height: fit-content;
       overflow: hidden;
       border-radius: 24px;
       background: #ffffff;
