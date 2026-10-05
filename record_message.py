@@ -19,95 +19,212 @@ RECORDS_TEMPLATE = """
     html, body { margin: 0; padding: 0; background: transparent; height: fit-content; min-height: 0; }
     body {
       width: fit-content;
-      padding: 8px;
-      color: #20314a;
-      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+      padding: 72px;
+      color: #1B1A2E;
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
     }
     .card {
       width: 760px;
+      border-radius: 30px;
       overflow: hidden;
-      border-radius: 24px;
       background: #ffffff;
-      box-shadow: 0 18px 46px rgba(43, 66, 102, 0.14);
+      border: 1px solid #EFEBFA;
+      box-shadow: 0 28px 56px rgba(58, 42, 122, 0.16), 0 5px 14px rgba(58, 42, 122, 0.06);
     }
+
+    /* ── Hero ── */
     .hero {
       position: relative;
-      min-height: 124px;
-      padding: 26px 120px 23px 30px;
+      min-height: 208px;
+      padding: 32px 34px 62px;
       color: #ffffff;
-      background: linear-gradient(135deg, #5a82ff 0%, #7e9cff 100%);
+      background-color: #6C5CE7;
+      background-image:
+        radial-gradient(88% 118% at 90% 6%, rgba(255, 172, 112, 0.58) 0%, rgba(255, 172, 112, 0) 56%),
+        radial-gradient(86% 104% at 8% 104%, rgba(126, 96, 255, 0.6) 0%, rgba(126, 96, 255, 0) 62%),
+        linear-gradient(128deg, #5B4BE0 0%, #7C5CF0 46%, #9B6DFF 100%);
     }
-    .eyebrow { margin: 0 0 6px; color: #e9efff; font-size: 12px; letter-spacing: .14em; }
-    h1 { margin: 0; font-size: 24px; font-weight: 500; }
-    .subtitle { margin: 8px 0 0; color: #e5ebff; font-size: 13px; }
-    .group-avatar {
-      position: absolute;
-      top: 27px;
-      right: 30px;
-      width: 70px;
-      height: 70px;
-      border: 4px solid rgba(255,255,255,.8);
-      border-radius: 22px;
+    .hero-art { position: absolute; top: 18px; right: 28px; width: 150px; height: 150px; }
+    .art-ring {
+      position: absolute; inset: 0; margin: auto;
+      width: 132px; height: 132px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(255, 255, 255, 0.26);
+    }
+    .art-glow {
+      position: absolute; inset: 0; margin: auto;
+      width: 146px; height: 146px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.06) 44%, rgba(255, 255, 255, 0) 70%);
+    }
+    .art-spark { position: absolute; left: 0; top: 24px; width: 22px; height: 22px; }
+    .group-wrap { position: absolute; inset: 0; margin: auto; width: 88px; height: 88px; }
+    .group-av {
+      display: block;
+      width: 88px; height: 88px;
+      border-radius: 20px;
+      border: 4px solid rgba(255, 255, 255, 0.88);
       object-fit: cover;
-      background: #d9e3ff;
+      background: #EFEAFF;
+      box-shadow: 0 14px 30px rgba(36, 16, 88, 0.34);
     }
-    .records { padding: 9px 22px 17px; }
+    .count-badge {
+      position: absolute;
+      right: -11px; bottom: -11px;
+      display: grid; place-items: center;
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      background: #FF9A6B;
+      border: 3.5px solid #ffffff;
+      box-shadow: 0 7px 16px rgba(120, 52, 16, 0.32);
+    }
+    .count-badge svg { width: 17px; height: 17px; }
+
+    .chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 14px 6px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em;
+    }
+    .chip .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #8CF2C6;
+      box-shadow: 0 0 0 3px rgba(140, 242, 198, 0.26);
+    }
+    h1 {
+      margin: 17px 0 0;
+      font-size: 31px; font-weight: 700; letter-spacing: 0.01em;
+      text-shadow: 0 2px 12px rgba(40, 18, 92, 0.28);
+    }
+    .sub { margin: 10px 0 0; font-size: 13.5px; color: rgba(255, 255, 255, 0.82); }
+
+    /* ── Records list, floated up over the hero edge ── */
+    .sheet {
+      position: relative; z-index: 2;
+      margin: -46px 28px 0;
+      padding: 6px 24px 18px;
+      border-radius: 24px;
+      background: #ffffff;
+      border: 1px solid #F1EEFB;
+      box-shadow: 0 18px 40px rgba(86, 70, 160, 0.15), 0 3px 10px rgba(86, 70, 160, 0.06);
+    }
     .record {
       display: grid;
-      grid-template-columns: 48px minmax(0, 1fr) auto;
-      gap: 13px;
+      grid-template-columns: 52px minmax(0, 1fr) auto;
+      gap: 14px;
       align-items: start;
-      padding: 17px 8px;
-      border-bottom: 1px solid #e8edf5;
+      padding: 16px 0;
     }
-    .record:last-child { border-bottom: 0; }
+    .record + .record { border-top: 1px dashed #E2DDF4; }
+
     .applicant-avatar {
-      display: grid;
-      place-items: center;
-      width: 48px;
-      height: 48px;
+      display: grid; place-items: center;
+      width: 52px; height: 52px;
       overflow: hidden;
-      border-radius: 15px;
-      background: linear-gradient(145deg, #d9e3ff, #9bb4ff);
+      border-radius: 16px;
+      background: linear-gradient(145deg, #B9A6FF, #8B6BFF);
       color: #ffffff;
-      font-size: 18px;
-      font-weight: 500;
+      font-size: 19px; font-weight: 700;
     }
     img.applicant-avatar { object-fit: cover; }
+
     .identity { min-width: 0; }
-    .name-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px; }
-    .name { font-size: 16px; font-weight: 500; }
-    .qq, .time { color: #738198; font-size: 12px; }
-    .reason { margin: 8px 0 0; color: #34445d; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
-    .status { padding: 6px 9px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
-    .passed { color: #1b9a73; background: #e7f8f1; }
-    .rejected { color: #b24654; background: #fff0f2; }
-    .skipped { color: #8a6418; background: #fff4d6; }
+    .name-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+    .name { font-size: 16px; font-weight: 700; color: #1B1A2E; }
+    .qq-tag {
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: #F2F0FA;
+      color: #6C5CE7;
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+    }
+    .qq { color: #4A4863; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+    .reason { margin: 8px 0 0; color: #4A4863; font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .time { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: #6E6B88; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+    .status {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 6px 13px 6px 11px;
+      border-radius: 999px;
+      border: 1px solid rgba(20, 30, 60, 0.07);
+      font-size: 12.5px; font-weight: 700;
+      white-space: nowrap;
+    }
+    .status::before {
+      content: "";
+      flex: 0 0 auto;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .passed { color: #0B8A66; background: #E4F7F0; }
+    .rejected { color: #A83B4A; background: #FFF0F2; }
+    .skipped { color: #8A6418; background: #FFF4D6; }
+
     .reject-box {
       grid-column: 2 / 4;
-      padding: 11px 14px;
-      border-left: 3px solid #e46b78;
-      border-radius: 0 12px 12px 0;
-      background: #fff1f3;
-      color: #9f3f4b;
-      font-size: 12px;
-      line-height: 1.55;
+      margin-top: 2px;
+      padding: 12px 16px;
+      border: 1px solid #F7DADE;
+      border-left: 3px solid #E46B78;
+      border-radius: 0 14px 14px 0;
+      background: #FFF5F6;
+      color: #8E3742;
+      font-size: 12.5px; line-height: 1.6;
       overflow-wrap: anywhere;
     }
-    .reject-title { display: block; margin-bottom: 3px; color: #b24654; font-weight: 500; letter-spacing: .08em; }
-    .footer { display: flex; justify-content: space-between; gap: 16px; padding: 13px 30px 20px; color: #738198; font-size: 12px; }
-    .brand { color: #4f7cff; font-weight: 500; }
+    .reject-title {
+      display: block;
+      margin-bottom: 3px;
+      color: #B24654;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+    }
+
+    .sheet-footer {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      margin-top: 4px; padding-top: 16px;
+      border-top: 1px solid #F1EFFA;
+      color: #6E6B88; font-size: 12.5px;
+    }
+    .brand {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 6px 13px;
+      border-radius: 999px;
+      background: #F3F0FF;
+      color: #5A48D6;
+      font-size: 12.5px; font-weight: 700;
+    }
   </style>
 </head>
 <body>
-  <section class="card">
-    <header class="hero">
-      <p class="eyebrow">ASTRBOT · REVIEW HISTORY</p>
+  <div class="card">
+    <div class="hero">
+      <!-- Group avatar with a history badge, so the card shows which group it is. -->
+      <div class="hero-art">
+        <span class="art-ring"></span>
+        <span class="art-glow"></span>
+        <svg class="art-spark" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2.6l2.4 6.6 6.6 2.4-6.6 2.4L12 20.6l-2.4-6.6L3 11.6l6.6-2.4z" fill="rgba(255,206,150,0.95)"/>
+        </svg>
+        <span class="group-wrap">
+          <img class="group-av" src="{{ group_avatar_data }}" alt="群头像">
+          <span class="count-badge">
+            <svg viewBox="0 0 20 20" fill="none">
+              <path d="M4.4 6.2h11.2M4.4 10h11.2M4.4 13.8h7" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>
+            </svg>
+          </span>
+        </span>
+      </div>
+
+      <span class="chip"><span class="dot"></span>ASTRBOT · REVIEW HISTORY</span>
       <h1>本群审核记录</h1>
-      <p class="subtitle">第 {{ page }} / {{ total_pages }} 页 · 共 {{ total_count }} 条记录</p>
-      <img class="group-avatar" src="{{ group_avatar_data }}" alt="群头像">
-    </header>
-    <div class="records">
+      <p class="sub">第 {{ page }} / {{ total_pages }} 页 · 共 {{ total_count }} 条记录</p>
+    </div>
+
+    <div class="sheet">
       {% for record in records %}
       <article class="record">
         {% if record.avatar_data %}
@@ -116,17 +233,37 @@ RECORDS_TEMPLATE = """
         <div class="applicant-avatar">{{ record.initial }}</div>
         {% endif %}
         <div class="identity">
-          <div class="name-line"><span class="name">{{ record.nickname }}</span><span class="qq">QQ：{{ record.user_id }}</span></div>
+          <div class="name-line">
+            <span class="name">{{ record.nickname }}</span>
+            <span class="qq"><span class="qq-tag">QQ</span> {{ record.user_id }}</span>
+          </div>
           <p class="reason">申请理由：{{ record.reason }}</p>
-          <div class="time">{{ record.time }}</div>
+          <div class="time">
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#9A96B4" stroke-width="1.8">
+              <circle cx="10" cy="10" r="7.6"/>
+              <path d="M10 6.1V10l2.9 1.8" stroke-linecap="round"/>
+            </svg>
+            {{ record.time }}
+          </div>
         </div>
         <span class="status {{ record.status_class }}">{{ record.status }}</span>
-        {% if record.reject_reason %}<div class="reject-box"><span class="reject-title">拒绝理由</span>{{ record.reject_reason }}</div>{% endif %}
+        {% if record.reject_reason %}
+        <div class="reject-box"><span class="reject-title">拒绝理由</span>{{ record.reject_reason }}</div>
+        {% endif %}
       </article>
       {% endfor %}
+
+      <div class="sheet-footer">
+        <span>{{ navigation }}</span>
+        <span class="brand">
+          <svg width="14" height="14" viewBox="0 0 20 20">
+            <path d="M10 2.4l1.9 5.2 5.2 1.9-5.2 1.9L10 16.6 8.1 11.4 2.9 9.5l5.2-1.9z" fill="#6C5CE7"/>
+          </svg>
+          QQ群自动审核
+        </span>
+      </div>
     </div>
-    <footer class="footer"><span>{{ navigation }}</span><span class="brand">QQ群自动审核</span></footer>
-  </section>
+  </div>
 </body>
 </html>
 """
@@ -246,7 +383,7 @@ async def build_review_records_message(
             options={
                 "full_page": True,
                 "omit_background": True,
-                "viewport_width": 784,
+                "viewport_width": 920,
                 "type": "png",
                 "quality": 90,
             },
