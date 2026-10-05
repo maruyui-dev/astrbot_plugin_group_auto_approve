@@ -10,9 +10,6 @@ async def delete_avatar_later(avatar_path):
     try:
         if os.path.exists(avatar_path):
             os.remove(avatar_path)
-            logger.info(
-                f"删除头像成功:{avatar_path}"
-            )
     except Exception as e:
         logger.error(
             f"删除头像失败:{e}"
