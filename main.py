@@ -61,8 +61,7 @@ from .record_store import (
 )
 from .record_message import build_review_records_message, build_review_records_text
 
-_SEEN_EVENTS = {}
-_EVENT_DEDUP_LOCK = asyncio.Lock()
+_DEDUP_CONTEXT_KEY = "_group_auto_approve_event_dedup_state"
 
 
 async def build_application_message(context, result, verify_result=None):
@@ -91,6 +90,11 @@ class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
         super().__init__(context, config)
         self.plugin_config = config or {}
+        dedup_state = getattr(context, _DEDUP_CONTEXT_KEY, None)
+        if dedup_state is None:
+            dedup_state = {"seen": {}, "lock": asyncio.Lock()}
+            setattr(context, _DEDUP_CONTEXT_KEY, dedup_state)
+        self._dedup_state = dedup_state
 
     async def _is_duplicate_event(self, event: AstrMessageEvent, scope: str) -> bool:
         """Return whether an event was already handled recently.
@@ -102,7 +106,6 @@ class MyPlugin(Star):
         Returns:
             True when the same platform event was already seen in this scope.
         """
-        global _SEEN_EVENTS
         raw_event = event.message_obj.raw_message
         now = time.monotonic()
         event_id = (
@@ -130,20 +133,22 @@ class MyPlugin(Star):
                 )
             )
 
-        async with _EVENT_DEDUP_LOCK:
-            _SEEN_EVENTS = {
+        async with self._dedup_state["lock"]:
+            seen_events = self._dedup_state["seen"]
+            seen_events = {
                 key: (timestamp, ttl)
-                for key, (timestamp, ttl) in _SEEN_EVENTS.items()
+                for key, (timestamp, ttl) in seen_events.items()
                 if now - timestamp < ttl
             }
             if any(
-                (previous_event := _SEEN_EVENTS.get(event_key))
+                (previous_event := seen_events.get(event_key))
                 and now - previous_event[0] < previous_event[1]
                 for event_key, _ in event_keys
             ):
                 return True
             for event_key, dedup_ttl in event_keys:
-                _SEEN_EVENTS[event_key] = (now, dedup_ttl)
+                seen_events[event_key] = (now, dedup_ttl)
+            self._dedup_state["seen"] = seen_events
         return False
 
     async def initialize(self):
