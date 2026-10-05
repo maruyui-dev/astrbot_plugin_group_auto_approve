@@ -349,6 +349,7 @@ async def build_leave_message(result):
     if not avatar_data:
         return build_leave_text(result)
     try:
+        viewport_height = 500 if result.get("operator_id") else 420
         image_path = await html_renderer.render_custom_template(
             LEAVE_TEMPLATE,
             {
@@ -370,7 +371,7 @@ async def build_leave_message(result):
                 "full_page": True,
                 "omit_background": True,
                 "viewport_width": 704,
-                "viewport_height": 500,
+                "viewport_height": viewport_height,
                 "type": "png",
                 "quality": 90,
             },
