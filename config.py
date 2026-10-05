@@ -115,8 +115,6 @@ def load_config():
                 merged_default = dict(saved_default)
                 merged_default.update(get_default_group_config())
                 data["default"] = merged_default
-            else:
-                logger.info("检测到旧版配置格式，已忽略，使用新的多群结构")
         except Exception as e:
             logger.error(f"读取 runtime_config.json 失败: {e}")
     return data
