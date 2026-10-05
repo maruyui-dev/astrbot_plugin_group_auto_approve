@@ -43,7 +43,6 @@ async def verify_by_llm(
     """
     question, answer = parse_question_answer(comment)
     if not question or not answer:
-        logger.info("入群验证：无法解析问题或答案")
         return None
 
     try:
@@ -83,11 +82,9 @@ async def verify_by_llm(
     try:
         data = json.loads(text)
     except Exception:
-        logger.info(f"入群验证：模型输出无法解析为 JSON，原文为 {text!r}")
         return None
 
     if not isinstance(data, dict) or "correct" not in data:
-        logger.info(f"入群验证：模型输出缺少 correct 字段，原文为 {text!r}")
         return None
 
     correct = data.get("correct")
