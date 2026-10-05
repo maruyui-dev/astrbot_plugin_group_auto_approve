@@ -5,6 +5,8 @@ import aiohttp
 from astrbot.api import logger
 
 AVATAR_DIR: Path | None = None
+AVATAR_MAX_BYTES = 5 * 1024 * 1024
+AVATAR_TIMEOUT = aiohttp.ClientTimeout(total=10, connect=5, sock_read=8)
 
 
 def set_avatar_dir(data_dir: str | Path):
@@ -150,6 +152,9 @@ async def handle_group_request(event):
     }
 
 async def download_avatar(user_id):
+    if not str(user_id).isdigit():
+        logger.warning(f"申请者QQ号格式异常，跳过头像下载: {user_id!r}")
+        return None
     avatar_url = (
         f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=640"
     )
@@ -161,10 +166,17 @@ async def download_avatar(user_id):
     avatar_path = AVATAR_DIR / f"{user_id}.png"
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=AVATAR_TIMEOUT) as session:
             async with session.get(avatar_url) as response:
                 if response.status == 200:
+                    content_type = response.headers.get("Content-Type", "")
+                    if content_type and not content_type.lower().startswith("image/"):
+                        logger.warning(f"申请者头像返回类型异常，QQ={user_id}")
+                        return None
                     data = await response.read()
+                    if len(data) > AVATAR_MAX_BYTES:
+                        logger.warning(f"申请者头像超过大小限制，QQ={user_id}")
+                        return None
                     with avatar_path.open("wb") as f:
                         f.write(data)
                     return avatar_path
@@ -190,15 +202,25 @@ async def download_group_avatar(group_id):
     if AVATAR_DIR is None:
         logger.error("Avatar directory has not been initialized")
         return None
+    if not str(group_id).isdigit():
+        logger.warning(f"群号格式异常，跳过群头像下载: {group_id!r}")
+        return None
 
     avatar_url = f"https://p.qlogo.cn/gh/{group_id}/{group_id}/640/"
     avatar_path = AVATAR_DIR / f"group_{group_id}.png"
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=AVATAR_TIMEOUT) as session:
             async with session.get(avatar_url) as response:
                 if response.status == 200:
+                    content_type = response.headers.get("Content-Type", "")
+                    if content_type and not content_type.lower().startswith("image/"):
+                        logger.warning(f"群头像返回类型异常，群号={group_id}")
+                        return None
                     data = await response.read()
+                    if len(data) > AVATAR_MAX_BYTES:
+                        logger.warning(f"群头像超过大小限制，群号={group_id}")
+                        return None
                     avatar_path.write_bytes(data)
                     return avatar_path
                 logger.warning(
