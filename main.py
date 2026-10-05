@@ -62,6 +62,7 @@ from .record_store import (
 from .record_message import build_review_records_message, build_review_records_text
 
 _DEDUP_CONTEXT_KEY = "_group_auto_approve_event_dedup_state"
+_KICK_BATCH_CONTEXT_KEY = "_group_auto_approve_kick_batch_state"
 
 
 async def build_application_message(context, result, verify_result=None):
@@ -95,6 +96,11 @@ class MyPlugin(Star):
             dedup_state = {"seen": {}, "lock": asyncio.Lock()}
             setattr(context, _DEDUP_CONTEXT_KEY, dedup_state)
         self._dedup_state = dedup_state
+        batch_state = getattr(context, _KICK_BATCH_CONTEXT_KEY, None)
+        if batch_state is None:
+            batch_state = {"groups": {}, "lock": asyncio.Lock()}
+            setattr(context, _KICK_BATCH_CONTEXT_KEY, batch_state)
+        self._kick_batch_state = batch_state
 
     async def _is_duplicate_event(self, event: AstrMessageEvent, scope: str) -> bool:
         """Return whether an event was already handled recently.
@@ -120,7 +126,9 @@ class MyPlugin(Star):
                 f"{raw_event.get('self_id')}:{event.get_group_id()}:"
                 f"{event.get_sender_id()}:{raw_event.get('post_type')}:"
                 f"{raw_event.get('request_type') or raw_event.get('notice_type')}:"
-                f"{raw_event.get('sub_type')}:{event.message_str.strip()}",
+                f"{raw_event.get('sub_type')}:{raw_event.get('user_id')}:"
+                f"{raw_event.get('operator_id')}:{raw_event.get('time')}:"
+                f"{event.message_str.strip()}",
                 5,
             )
         ]
@@ -151,6 +159,111 @@ class MyPlugin(Star):
             self._dedup_state["seen"] = seen_events
         return False
 
+    async def _queue_kick_event(self, event: AstrMessageEvent, raw_event: dict):
+        """Collect nearby kick events and build one notification.
+
+        Args:
+            event: The first AstrBot event in the current batch.
+            raw_event: Raw OneBot group decrease event.
+
+        Returns:
+            A message chain for the batch leader, or None for later events.
+        """
+        group_id = str(raw_event["group_id"])
+        item = {
+            "user_id": str(raw_event["user_id"]),
+            "operator_id": str(raw_event.get("operator_id") or ""),
+            "time": datetime.fromtimestamp(raw_event.get("time", 0)).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+        }
+        async with self._kick_batch_state["lock"]:
+            batch = self._kick_batch_state["groups"].get(group_id)
+            is_leader = batch is None
+            if batch is None:
+                batch = {
+                    "count": 0,
+                    "first_item": item,
+                    "last_time": item["time"],
+                    "operator_ids": set(),
+                }
+                self._kick_batch_state["groups"][group_id] = batch
+            batch["count"] += 1
+            batch["last_time"] = item["time"]
+            if item["operator_id"]:
+                batch["operator_ids"].add(item["operator_id"])
+
+        if not is_leader:
+            return None
+
+        await asyncio.sleep(3)
+        async with self._kick_batch_state["lock"]:
+            batch = self._kick_batch_state["groups"].pop(group_id, None)
+        if not batch:
+            return None
+
+        count = batch["count"]
+        operator_ids = batch["operator_ids"]
+        operator_id = next(iter(operator_ids), "")
+        operator_nickname = ""
+        if operator_id:
+            try:
+                operator_info = await event.bot.call_action(
+                    "get_stranger_info",
+                    user_id=operator_id,
+                )
+                operator_nickname = (
+                    operator_info.get("nickname")
+                    or operator_info.get("nick")
+                    or operator_id
+                )
+            except Exception as error:
+                logger.warning(f"获取批量移出操作人信息失败: {error}")
+                operator_nickname = operator_id
+
+        if count == 1:
+            user_id = batch["first_item"]["user_id"]
+            try:
+                user_info = await event.bot.call_action(
+                    "get_stranger_info",
+                    user_id=user_id,
+                )
+            except Exception as error:
+                logger.warning(f"获取退群者信息失败，将使用QQ号作为昵称: {error}")
+                user_info = {}
+            result = {
+                "nickname": user_info.get("nickname")
+                or user_info.get("nick")
+                or user_id,
+                "user_id": user_id,
+                "group_id": group_id,
+                "leave_time": batch["first_item"]["time"],
+                "event_label": "被管理员移出",
+                "operator_id": operator_id,
+                "operator_nickname": operator_nickname,
+                "status_color": "#c64d5c",
+                "status_background": "#fff0f2",
+            }
+            if get_webui_config("send_images", True):
+                result["avatar_path"] = await download_avatar(user_id)
+                return await build_leave_message(result)
+            return build_leave_text(result)
+
+        result = {
+            "group_id": group_id,
+            "leave_time": batch["last_time"],
+            "event_label": "批量移出",
+            "operator_id": operator_id,
+            "operator_nickname": operator_nickname,
+            "status_color": "#c64d5c",
+            "status_background": "#fff0f2",
+            "is_batch": True,
+            "count": count,
+        }
+        if get_webui_config("send_images", True):
+            return await build_leave_message(result)
+        return build_leave_text(result)
+
     async def initialize(self):
         from .config import set_webui_config
         plugin_data_dir = StarTools.get_data_dir("astrbot_plugin_group_auto_approve")
@@ -177,6 +290,12 @@ class MyPlugin(Star):
             user_id = raw_event.get("user_id")
             if not group_id or not user_id:
                 logger.warning("退群事件缺少群号或用户QQ，无法生成退群通知")
+                return
+
+            if raw_event.get("sub_type") == "kick":
+                message_chain = await self._queue_kick_event(event, raw_event)
+                if message_chain:
+                    yield event.chain_result(message_chain)
                 return
 
             try:
