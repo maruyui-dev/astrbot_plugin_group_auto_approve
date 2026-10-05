@@ -10,170 +10,294 @@ from astrbot.api import html_renderer, logger
 from astrbot.api.message_components import Image, Plain
 
 CARD_TEMPLATE = """
-<html>
+<!DOCTYPE html>
+<html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <style>
-    * { box-sizing: border-box; }
-    html,
-    body {
-      margin: 0;
-      padding: 0;
-      background: transparent;
-      height: fit-content;
-      min-height: 0;
-    }
-    body {
-      width: fit-content;
-      padding: 8px;
-      color: #20314a;
-      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
-    }
-    .card {
-      width: 680px;
-      overflow: hidden;
-      border-radius: 24px;
-      background: #ffffff;
-      box-shadow: 0 18px 46px rgba(43, 66, 102, 0.14);
-    }
-    .hero {
-      position: relative;
-      min-height: 124px;
-      padding: 28px 116px 26px 30px;
-      color: #ffffff;
-      background: linear-gradient(135deg, #5a82ff 0%, #7e9cff 100%);
-    }
-    .eyebrow {
-      margin: 0 0 7px;
-      font-size: 12px;
-      letter-spacing: 0.14em;
-      opacity: 0.82;
-    }
-    h1 {
-      margin: 0;
-      font-size: 25px;
-      font-weight: 500;
-      letter-spacing: 0.03em;
-    }
-    .group-avatar {
-      position: absolute;
-      top: 27px;
-      right: 30px;
-      width: 70px;
-      height: 70px;
-      border: 4px solid rgba(255, 255, 255, 0.8);
-      border-radius: 22px;
-      object-fit: cover;
-      background: #d9e3ff;
-    }
-    .content { padding: 26px 30px 24px; }
-    .person {
-      display: flex;
-      align-items: center;
-      gap: 15px;
-      padding-bottom: 22px;
-      border-bottom: 1px solid #e8edf5;
-    }
-    .avatar {
-      width: 58px;
-      height: 58px;
-      flex: 0 0 auto;
-      border-radius: 18px;
-      object-fit: cover;
-      background: #d9e3ff;
-    }
-    .identity { min-width: 0; }
-    .nickname {
-      margin: 0 0 4px;
-      font-size: 18px;
-      font-weight: 500;
-      overflow-wrap: anywhere;
-    }
-    .qq, .time {
-      color: #738198;
-      font-size: 13px;
-    }
-    .status {
-      margin-left: auto;
-      padding: 7px 11px;
-      border-radius: 999px;
-      color: {{ status_color }};
-      background: {{ status_background }};
-      font-size: 13px;
-      white-space: nowrap;
-    }
-    .label {
-      margin: 22px 0 9px;
-      color: #738198;
-      font-size: 12px;
-      letter-spacing: 0.08em;
-    }
-    .reason {
-      margin: 0;
-      padding: 15px 17px;
-      border-radius: 14px;
-      background: #f7f9fd;
-      color: #34445d;
-      font-size: 15px;
-      line-height: 1.7;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
-    .reject {
-      margin-top: 14px;
-      padding: 13px 17px;
-      border-left: 3px solid #e46b78;
-      border-radius: 0 12px 12px 0;
-      background: #fff3f4;
-      color: #9f3f4b;
-      font-size: 14px;
-      line-height: 1.6;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
-    .reject-title {
-      display: block;
-      margin-bottom: 3px;
-      color: #b24654;
-      font-size: 12px;
-      font-weight: 500;
-      letter-spacing: 0.08em;
-    }
-    .footer {
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      margin-top: 22px;
-      color: #738198;
-      font-size: 12px;
-    }
-    .brand { color: #4f7cff; font-weight: 500; }
-  </style>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: transparent; height: fit-content; min-height: 0; }
+  body {
+    width: fit-content;
+    padding: 72px;
+    color: #1B1A2E;
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+  }
+
+  .card {
+    width: 720px;
+    border-radius: 30px;
+    overflow: hidden;
+    background: #ffffff;
+    border: 1px solid #EFEBFA;
+    box-shadow: 0 28px 56px rgba(58, 42, 122, 0.16), 0 5px 14px rgba(58, 42, 122, 0.06);
+  }
+
+  /* ── Hero: violet dusk gradient + warm apricot glow + illustration ── */
+  .hero {
+    position: relative;
+    min-height: 208px;
+    padding: 32px 34px 62px;
+    color: #ffffff;
+    background-color: #6C5CE7;
+    background-image:
+      radial-gradient(88% 118% at 90% 6%, rgba(255, 172, 112, 0.58) 0%, rgba(255, 172, 112, 0) 56%),
+      radial-gradient(86% 104% at 8% 104%, rgba(126, 96, 255, 0.6) 0%, rgba(126, 96, 255, 0) 62%),
+      linear-gradient(128deg, #5B4BE0 0%, #7C5CF0 46%, #9B6DFF 100%);
+  }
+  /* ── Hero art: the group avatar, with an "add member" badge ── */
+  .hero-art { position: absolute; top: 18px; right: 28px; width: 150px; height: 150px; }
+  .art-ring { position: absolute; inset: 0; margin: auto; border-radius: 50%; }
+  .art-ring.r1 { width: 132px; height: 132px; border: 1.5px solid rgba(255, 255, 255, 0.26); }
+  .art-glow {
+    position: absolute;
+    inset: 0; margin: auto;
+    width: 146px; height: 146px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.06) 44%, rgba(255, 255, 255, 0) 70%);
+  }
+  .art-spark { position: absolute; left: 0; top: 24px; width: 22px; height: 22px; }
+  .group-wrap { position: absolute; inset: 0; margin: auto; width: 88px; height: 88px; }
+  .group-av {
+    display: block;
+    width: 88px; height: 88px;
+    border-radius: 20px;
+    border: 4px solid rgba(255, 255, 255, 0.88);
+    object-fit: cover;
+    background: #EFEAFF;
+    box-shadow: 0 14px 30px rgba(36, 16, 88, 0.34);
+  }
+  .plus-badge {
+    position: absolute;
+    right: -11px; bottom: -11px;
+    display: grid;
+    place-items: center;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: #2FBF8F;
+    border: 3.5px solid #ffffff;
+    box-shadow: 0 7px 16px rgba(16, 92, 70, 0.34);
+  }
+  .plus-badge svg { width: 17px; height: 17px; }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px 6px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+  }
+  .chip .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #8CF2C6;
+    box-shadow: 0 0 0 3px rgba(140, 242, 198, 0.26);
+  }
+  h1 {
+    margin: 17px 0 0;
+    font-size: 31px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    text-shadow: 0 2px 12px rgba(40, 18, 92, 0.28);
+  }
+  .sub { margin: 10px 0 0; font-size: 13.5px; color: rgba(255, 255, 255, 0.82); }
+
+  /* ── Applicant panel, floated up over the hero edge ── */
+  .pass {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: -46px 28px 0;
+    padding: 18px 22px;
+    border-radius: 24px;
+    background: #ffffff;
+    border: 1px solid #F1EEFB;
+    box-shadow: 0 18px 40px rgba(86, 70, 160, 0.15), 0 3px 10px rgba(86, 70, 160, 0.06);
+  }
+  .ring {
+    flex: 0 0 auto;
+    width: 72px; height: 72px;
+    padding: 3px;
+    border-radius: 23px;
+    background: linear-gradient(140deg, #8B6BFF 0%, #FF9A6B 58%, #FFC98F 100%);
+    box-shadow: 0 8px 20px rgba(108, 92, 231, 0.24);
+  }
+  .ring img { display: block; width: 100%; height: 100%; border-radius: 20px; object-fit: cover; background: #EFEAFF; }
+
+  .who { min-width: 0; }
+  .name { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.01em; }
+  .qq { display: flex; align-items: center; gap: 7px; margin-top: 7px; }
+  .qq-tag {
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: #F2F0FA;
+    color: #6C5CE7;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+  .qq-id { color: #4A4863; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    padding: 9px 16px 9px 13px;
+    border-radius: 999px;
+    border: 1px solid rgba(20, 30, 60, 0.07);
+    color: {{ status_color }};
+    background: {{ status_background }};
+    font-size: 13.5px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .status::before {
+    content: "";
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  /* ── Body ── */
+  .body { padding: 24px 34px 26px; }
+  .sec-head { display: flex; align-items: center; gap: 13px; margin-bottom: 15px; }
+  .sec-title { font-size: 12.5px; font-weight: 700; letter-spacing: 0.13em; color: #726F8C; }
+  .sec-line { flex: 1; height: 1px; background: linear-gradient(90deg, #E6E2F5 0%, rgba(245, 243, 252, 0) 100%); }
+
+  /* The reason arrives as one pre-wrapped block. ::first-line lets the question
+     line carry the highlight without splitting the string in Python. */
+  .qa-text {
+    margin: 0;
+    padding: 15px 22px;
+    border-radius: 20px;
+    background: #F8F7FD;
+    border: 1px solid #EDEAF8;
+    color: #4A4863;
+    font-size: 15px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .qa-text::first-line {
+    color: #5A48D6;
+    font-weight: 700;
+    background-color: #ECE7FF;
+  }
+
+  .reject-box {
+    margin-top: 12px;
+    padding: 14px 18px;
+    border: 1px solid #F7DADE;
+    border-left: 3px solid #E46B78;
+    border-radius: 0 16px 16px 0;
+    background: #FFF5F6;
+    color: #8E3742;
+    font-size: 13.5px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .reject-title {
+    display: block;
+    margin-bottom: 4px;
+    color: #B24654;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+
+  .meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid #F1EFFA;
+  }
+  .time { display: inline-flex; align-items: center; gap: 8px; color: #6E6B88; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 13px;
+    border-radius: 999px;
+    background: #F3F0FF;
+    color: #5A48D6;
+    font-size: 12.5px;
+    font-weight: 700;
+  }
+</style>
 </head>
 <body>
   <div class="card">
     <div class="hero">
-      <p class="eyebrow">ASTRBOT · GROUP REVIEW</p>
-      <h1>新的入群申请</h1>
-      <img class="group-avatar" src="{{ group_avatar_data }}" alt="群头像">
-    </div>
-    <div class="content">
-      <div class="person">
-        <img class="avatar" src="{{ avatar_data }}" alt="申请者头像">
-        <div class="identity">
-          <p class="nickname">{{ nickname }}</p>
-          <div class="qq">QQ：{{ user_id }}</div>
-        </div>
-        <span class="status">{{ status }}</span>
+      <!-- Group avatar with an "add member" badge, so the card always shows which group it is. -->
+      <div class="hero-art">
+        <span class="art-ring r1"></span>
+        <span class="art-glow"></span>
+        <svg class="art-spark" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2.6l2.4 6.6 6.6 2.4-6.6 2.4L12 20.6l-2.4-6.6L3 11.6l6.6-2.4z" fill="rgba(255,206,150,0.95)"/>
+        </svg>
+        <span class="group-wrap">
+          <img class="group-av" src="{{ group_avatar_data }}" alt="群头像">
+          <span class="plus-badge">
+            <svg viewBox="0 0 20 20" fill="none">
+              <path d="M10 4.2v11.6M4.2 10h11.6" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+            </svg>
+          </span>
+        </span>
       </div>
-      <p class="label">申请理由</p>
-      <p class="reason">{{ reason }}</p>
+
+      <span class="chip"><span class="dot"></span>ASTRBOT · 自动审核</span>
+      <h1>新的入群申请</h1>
+      <p class="sub">有人申请加入你的群聊，等待你的确认</p>
+    </div>
+
+    <div class="pass">
+      <span class="ring"><img src="{{ avatar_data }}" alt="申请者头像"></span>
+      <div class="who">
+        <p class="name">{{ nickname }}</p>
+        <div class="qq"><span class="qq-tag">QQ</span><span class="qq-id">{{ user_id }}</span></div>
+      </div>
+      <span class="status">{{ status }}</span>
+    </div>
+
+    <div class="body">
+      <div class="sec-head">
+        <span class="sec-title">申请理由</span>
+        <span class="sec-line"></span>
+      </div>
+
+      <p class="qa-text">{{ reason }}</p>
+
       {% if reject_reason %}
-      <div class="reject"><span class="reject-title">拒绝理由</span>{{ reject_reason }}</div>
+      <div class="reject-box"><span class="reject-title">拒绝理由</span>{{ reject_reason }}</div>
       {% endif %}
-      <div class="footer">
-        <span class="time">{{ request_time }}</span>
-        <span class="brand">QQ群自动审核</span>
+
+      <div class="meta">
+        <span class="time">
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#9A96B4" stroke-width="1.7">
+            <circle cx="10" cy="10" r="7.6"/>
+            <path d="M10 6.1V10l2.9 1.8" stroke-linecap="round"/>
+          </svg>
+          {{ request_time }}
+        </span>
+        <span class="brand">
+          <svg width="14" height="14" viewBox="0 0 20 20">
+            <path d="M10 2.4l1.9 5.2 5.2 1.9-5.2 1.9L10 16.6 8.1 11.4 2.9 9.5l5.2-1.9z" fill="#6C5CE7"/>
+          </svg>
+          QQ群自动审核
+        </span>
       </div>
     </div>
   </div>
@@ -190,63 +314,257 @@ LEAVE_TEMPLATE = """
     html, body { margin: 0; padding: 0; background: transparent; height: fit-content; min-height: 0; }
     body {
       width: fit-content;
-      padding: 8px;
-      color: #24324a;
-      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+      padding: 72px;
+      color: #1B1A2E;
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
     }
     .card {
       width: 680px;
+      border-radius: 30px;
       overflow: hidden;
+      background: #ffffff;
+      border: 1px solid #EFEBFA;
+      box-shadow: 0 28px 56px rgba(58, 42, 122, 0.16), 0 5px 14px rgba(58, 42, 122, 0.06);
+    }
+
+    /* ── Hero ── */
+    .hero {
+      position: relative;
+      min-height: 208px;
+      padding: 32px 34px 62px;
+      color: #ffffff;
+      background-color: #6C5CE7;
+      background-image:
+        radial-gradient(88% 118% at 90% 6%, rgba(255, 172, 112, 0.58) 0%, rgba(255, 172, 112, 0) 56%),
+        radial-gradient(86% 104% at 8% 104%, rgba(126, 96, 255, 0.6) 0%, rgba(126, 96, 255, 0) 62%),
+        linear-gradient(128deg, #5B4BE0 0%, #7C5CF0 46%, #9B6DFF 100%);
+    }
+    .hero-art { position: absolute; top: 18px; right: 28px; width: 150px; height: 150px; }
+    .art-ring {
+      position: absolute; inset: 0; margin: auto;
+      width: 132px; height: 132px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(255, 255, 255, 0.26);
+    }
+    .art-glow {
+      position: absolute; inset: 0; margin: auto;
+      width: 146px; height: 146px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.06) 44%, rgba(255, 255, 255, 0) 70%);
+    }
+    .art-tile {
+      position: absolute; inset: 0; margin: auto;
+      display: grid; place-items: center;
+      width: 88px; height: 88px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.16);
+      border: 3px solid rgba(255, 255, 255, 0.55);
+      box-shadow: 0 14px 30px rgba(36, 16, 88, 0.28);
+    }
+    .art-tile svg { width: 46px; height: 46px; }
+    .art-spark { position: absolute; left: 0; top: 24px; width: 22px; height: 22px; }
+
+    .chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 14px 6px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em;
+    }
+    .chip .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #8CF2C6;
+      box-shadow: 0 0 0 3px rgba(140, 242, 198, 0.26);
+    }
+    h1 {
+      margin: 17px 0 0;
+      font-size: 31px; font-weight: 700; letter-spacing: 0.01em;
+      text-shadow: 0 2px 12px rgba(40, 18, 92, 0.28);
+    }
+    .sub { margin: 10px 0 0; font-size: 13.5px; color: rgba(255, 255, 255, 0.82); }
+
+    /* ── Member panel, floated up over the hero edge ── */
+    .member {
+      position: relative; z-index: 2;
+      display: flex; align-items: center; gap: 16px;
+      margin: -46px 28px 0;
+      padding: 18px 22px;
       border-radius: 24px;
       background: #ffffff;
-      box-shadow: 0 18px 46px rgba(43, 66, 102, 0.16);
+      border: 1px solid #F1EEFB;
+      box-shadow: 0 18px 40px rgba(86, 70, 160, 0.15), 0 3px 10px rgba(86, 70, 160, 0.06);
     }
-    .header {
-      padding: 28px 32px 26px;
-      color: #ffffff;
-      background: linear-gradient(135deg, #667eea 0%, #8b9cf6 100%);
+    .ring {
+      flex: 0 0 auto;
+      width: 72px; height: 72px;
+      padding: 3px;
+      border-radius: 23px;
+      background: linear-gradient(140deg, #8B6BFF 0%, #FF9A6B 58%, #FFC98F 100%);
+      box-shadow: 0 8px 20px rgba(108, 92, 231, 0.24);
     }
-    .eyebrow { margin: 0 0 8px; font-size: 12px; letter-spacing: .14em; opacity: .82; }
-    h1 { margin: 0; font-size: 26px; font-weight: 500; }
-    .header-desc { margin: 9px 0 0; color: #eaf0ff; font-size: 14px; }
-    .content { padding: 30px 32px 28px; }
-    .person { display: flex; align-items: center; gap: 18px; padding-bottom: 24px; border-bottom: 1px solid #e8edf5; }
-    .avatar { width: 76px; height: 76px; flex: 0 0 auto; border-radius: 22px; object-fit: cover; background: #e4eaff; }
-    .identity { min-width: 0; }
-    .nickname { margin: 0 0 8px; font-size: 23px; font-weight: 500; }
-    .qq { color: #7a879b; font-size: 14px; }
-    .status { margin-left: auto; padding: 9px 14px; border-radius: 999px; color: {{ status_color }}; background: {{ status_background }}; font-size: 14px; white-space: nowrap; }
-    .info-title { margin: 24px 0 10px; color: #7a879b; font-size: 12px; letter-spacing: .1em; }
-    .time-box { padding: 16px 18px; border-radius: 14px; background: #f7f9fd; color: #34445d; font-size: 16px; }
-    .operator { margin-top: 14px; padding: 14px 18px; border-left: 3px solid #e46b78; border-radius: 0 12px 12px 0; background: #fff1f3; color: #9f3f4b; font-size: 14px; }
-    .footer { display: flex; justify-content: space-between; margin-top: 24px; color: #7a879b; font-size: 12px; }
-    .brand { color: #5d7df2; font-weight: 500; }
+    .ring img { display: block; width: 100%; height: 100%; border-radius: 20px; object-fit: cover; background: #EFEAFF; }
+    .who { min-width: 0; }
+    .name { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.01em; }
+    .qq { display: flex; align-items: center; gap: 7px; margin-top: 7px; }
+    .qq-tag {
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: #F2F0FA;
+      color: #6C5CE7;
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+    }
+    .qq-id { color: #4A4863; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .status {
+      display: inline-flex; align-items: center; gap: 8px;
+      margin-left: auto;
+      padding: 9px 16px 9px 13px;
+      border-radius: 999px;
+      border: 1px solid rgba(20, 30, 60, 0.07);
+      color: {{ status_color }};
+      background: {{ status_background }};
+      font-size: 13.5px; font-weight: 700;
+      white-space: nowrap;
+    }
+    .status::before {
+      content: "";
+      flex: 0 0 auto;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* ── Body ── */
+    .body { padding: 24px 34px 26px; }
+    .sec-head { display: flex; align-items: center; gap: 13px; margin-bottom: 15px; }
+    .sec-title { font-size: 12.5px; font-weight: 700; letter-spacing: 0.13em; color: #726F8C; }
+    .sec-line { flex: 1; height: 1px; background: linear-gradient(90deg, #E6E2F5 0%, rgba(245, 243, 252, 0) 100%); }
+
+    .time-panel {
+      display: flex; align-items: center; gap: 14px;
+      padding: 18px 22px;
+      border-radius: 20px;
+      background: #F8F7FD;
+      border: 1px solid #EDEAF8;
+    }
+    .time-panel svg { width: 22px; height: 22px; flex: 0 0 auto; }
+    .time-value {
+      font-size: 17px; font-weight: 700; color: #23213A;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.01em;
+    }
+
+    .operator {
+      margin-top: 12px;
+      padding: 15px 20px;
+      border: 1px solid #F7DADE;
+      border-left: 3px solid #E46B78;
+      border-radius: 0 18px 18px 0;
+      background: #FFF5F6;
+      color: #8E3742;
+      font-size: 13.5px; line-height: 1.65;
+    }
+    .operator-title {
+      display: block;
+      margin-bottom: 5px;
+      color: #B24654;
+      font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em;
+    }
+    .operator .who-line { color: #23213A; font-weight: 700; }
+
+    .meta {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 18px; padding-top: 18px;
+      border-top: 1px solid #F1EFFA;
+    }
+    .group {
+      display: inline-flex; align-items: center; gap: 8px;
+      color: #6E6B88; font-size: 13px;
+      font-variant-numeric: tabular-nums;
+    }
+    .brand {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 6px 13px;
+      border-radius: 999px;
+      background: #F3F0FF;
+      color: #5A48D6;
+      font-size: 12.5px; font-weight: 700;
+    }
   </style>
 </head>
 <body>
-  <section class="card">
-    <header class="header">
-      <p class="eyebrow">ASTRBOT · GROUP NOTICE</p>
-      <h1>群成员离开了群聊</h1>
-      <p class="header-desc">群组成员变动通知</p>
-    </header>
-    <main class="content">
-      <div class="person">
-        <img class="avatar" src="{{ avatar_data }}" alt="退群者头像">
-        <div class="identity">
-          <p class="nickname">{{ nickname }}</p>
-          <div class="qq">QQ：{{ user_id }}</div>
-        </div>
-        <span class="status">{{ event_label }}</span>
+  <div class="card">
+    <div class="hero">
+      <!-- Illustration: a member stepping out through the door. -->
+      <div class="hero-art">
+        <span class="art-ring"></span>
+        <span class="art-glow"></span>
+        <svg class="art-spark" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2.6l2.4 6.6 6.6 2.4-6.6 2.4L12 20.6l-2.4-6.6L3 11.6l6.6-2.4z" fill="rgba(255,206,150,0.95)"/>
+        </svg>
+        <span class="art-tile">
+          <svg viewBox="0 0 48 48" fill="none">
+            <rect x="6" y="10" width="16" height="28" rx="5.5" fill="rgba(255,255,255,0.5)"/>
+            <path d="M17 24h21" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round"/>
+            <path d="M31.5 17.5L38 24l-6.5 6.5" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
       </div>
-      <p class="info-title">退群时间</p>
-      <div class="time-box">{{ leave_time }}</div>
+
+      <span class="chip"><span class="dot"></span>ASTRBOT · 自动管理</span>
+      <h1>群成员离开了群聊</h1>
+      <p class="sub">群组成员变动通知</p>
+    </div>
+
+    <div class="member">
+      <span class="ring"><img src="{{ avatar_data }}" alt="退群者头像"></span>
+      <div class="who">
+        <p class="name">{{ nickname }}</p>
+        <div class="qq"><span class="qq-tag">QQ</span><span class="qq-id">{{ user_id }}</span></div>
+      </div>
+      <span class="status">{{ event_label }}</span>
+    </div>
+
+    <div class="body">
+      <div class="sec-head">
+        <span class="sec-title">退群时间</span>
+        <span class="sec-line"></span>
+      </div>
+
+      <div class="time-panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#8B84C8" stroke-width="1.9">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 7.2V12l3.6 2.2" stroke-linecap="round"/>
+        </svg>
+        <span class="time-value">{{ leave_time }}</span>
+      </div>
+
       {% if operator_id %}
-      <div class="operator">操作人：{{ operator_nickname }}（QQ：{{ operator_id }}）<br>该成员被管理员移出群聊</div>
+      <div class="operator">
+        <span class="operator-title">操作人</span>
+        <span class="who-line">{{ operator_nickname }}</span>（QQ：{{ operator_id }}）<br>该成员被管理员移出群聊
+      </div>
       {% endif %}
-      <div class="footer"><span>群号：{{ group_id }}</span><span class="brand">QQ群自动管理</span></div>
-    </main>
-  </section>
+
+      <div class="meta">
+        <span class="group">
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#9A96B4" stroke-width="1.7">
+            <circle cx="8" cy="7" r="3.2"/>
+            <path d="M2.6 16.4a5.6 5.6 0 0 1 10.8 0" stroke-linecap="round"/>
+            <path d="M14.2 5.2a2.8 2.8 0 0 1 0 5.4M15.6 16.4a5.2 5.2 0 0 0-2.4-4.2" stroke-linecap="round"/>
+          </svg>
+          群号 {{ group_id }}
+        </span>
+        <span class="brand">
+          <svg width="14" height="14" viewBox="0 0 20 20">
+            <path d="M10 2.4l1.9 5.2 5.2 1.9-5.2 1.9L10 16.6 8.1 11.4 2.9 9.5l5.2-1.9z" fill="#6C5CE7"/>
+          </svg>
+          QQ群自动管理
+        </span>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
 """
@@ -370,7 +688,7 @@ async def build_leave_message(result):
             options={
                 "full_page": True,
                 "omit_background": True,
-                "viewport_width": 704,
+                "viewport_width": 840,
                 "viewport_height": viewport_height,
                 "type": "png",
                 "quality": 90,
@@ -476,7 +794,7 @@ async def build_verify_message(context, result, verify_result=None):
                 options={
                     "full_page": True,
                     "omit_background": True,
-                    "viewport_width": 704,
+                    "viewport_width": 840,
                     "viewport_height": viewport_height,
                     "type": "png",
                     "quality": 90,
