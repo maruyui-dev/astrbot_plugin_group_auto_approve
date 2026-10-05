@@ -60,15 +60,14 @@ async def verify_by_llm(
         return None
 
     state = getattr(context, _STATE_ATTR, None)
-    if state is None:
-        state = {
-            "cache": {},
-            "profile_cache": {},
-            "inflight": {},
-            "lock": asyncio.Lock(),
-            "stats": {"cache_hit": 0, "inflight_join": 0, "request": 0},
-        }
+    if not isinstance(state, dict) or "lock" not in state:
+        state = {"lock": asyncio.Lock()}
         setattr(context, _STATE_ATTR, state)
+    # 插件热重载后 context 上可能残留旧版本写入的状态，这里补齐缺失的键
+    state.setdefault("cache", {})
+    state.setdefault("profile_cache", {})
+    state.setdefault("inflight", {})
+    state.setdefault("stats", {"cache_hit": 0, "inflight_join": 0, "request": 0})
 
     group_id = str(event.get_group_id() or "")
     raw_profile = " ".join(

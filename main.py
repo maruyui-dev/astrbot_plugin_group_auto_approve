@@ -112,18 +112,18 @@ class MyPlugin(Star):
         super().__init__(context, config)
         self.plugin_config = config or {}
         dedup_state = getattr(context, _DEDUP_CONTEXT_KEY, None)
-        if dedup_state is None:
-            dedup_state = {
-                "seen": {},
-                "lock": asyncio.Lock(),
-                "stats": {},
-            }
+        if not isinstance(dedup_state, dict) or "lock" not in dedup_state:
+            dedup_state = {"lock": asyncio.Lock()}
             setattr(context, _DEDUP_CONTEXT_KEY, dedup_state)
+        # 插件热重载后 context 上可能残留旧版本写入的状态，这里补齐缺失的键
+        dedup_state.setdefault("seen", {})
+        dedup_state.setdefault("stats", {})
         self._dedup_state = dedup_state
         batch_state = getattr(context, _KICK_BATCH_CONTEXT_KEY, None)
-        if batch_state is None:
-            batch_state = {"groups": {}, "lock": asyncio.Lock()}
+        if not isinstance(batch_state, dict) or "lock" not in batch_state:
+            batch_state = {"lock": asyncio.Lock()}
             setattr(context, _KICK_BATCH_CONTEXT_KEY, batch_state)
+        batch_state.setdefault("groups", {})
         self._kick_batch_state = batch_state
 
     async def _is_duplicate_event(self, event: AstrMessageEvent, scope: str) -> bool:
