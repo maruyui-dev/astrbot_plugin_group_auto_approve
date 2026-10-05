@@ -26,8 +26,18 @@ from .agent_tools import (
 )
 #导入项目内部模块
 from .action import approve_group_request
-from .message import build_verify_chain, build_verify_message
-from .request import download_group_avatar, handle_group_request, set_avatar_dir
+from .message import (
+    build_leave_message,
+    build_leave_text,
+    build_verify_chain,
+    build_verify_message,
+)
+from .request import (
+    download_avatar,
+    download_group_avatar,
+    handle_group_request,
+    set_avatar_dir,
+)
 from .ai_verify import verify_by_llm
 from .config import (
     get_group_cfg,
@@ -100,6 +110,43 @@ class MyPlugin(Star):
             logger.info(
                 f"退群事件原始JSON：{json.dumps(raw_event, ensure_ascii=False)}"
             )
+            group_id = raw_event.get("group_id")
+            user_id = raw_event.get("user_id")
+            if not group_id or not user_id:
+                logger.warning("退群事件缺少群号或用户QQ，无法生成退群通知")
+                return
+
+            try:
+                user_info = await event.bot.call_action(
+                    "get_stranger_info",
+                    user_id=user_id,
+                )
+            except Exception as error:
+                logger.warning(f"获取退群者信息失败，将使用QQ号作为昵称: {error}")
+                user_info = {}
+
+            is_kick = raw_event.get("sub_type") == "kick"
+            leave_result = {
+                "nickname": user_info.get("nickname")
+                or user_info.get("nick")
+                or str(user_id),
+                "user_id": str(user_id),
+                "group_id": str(group_id),
+                "leave_time": datetime.fromtimestamp(
+                    raw_event.get("time", 0)
+                ).strftime("%Y-%m-%d %H:%M:%S"),
+                "event_label": "被管理员移出" if is_kick else "自主退群",
+                "operator_id": str(raw_event.get("operator_id", ""))
+                if is_kick
+                else "",
+                "status_color": "#c64d5c" if is_kick else "#65758b",
+                "status_background": "#fff0f2" if is_kick else "#eef1f5",
+            }
+            if get_webui_config("send_images", True):
+                leave_result["avatar_path"] = await download_avatar(user_id)
+                yield event.chain_result(await build_leave_message(leave_result))
+            else:
+                yield event.chain_result(build_leave_text(leave_result))
             return
 
         result = await handle_group_request(event)
