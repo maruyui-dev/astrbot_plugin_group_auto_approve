@@ -1,5 +1,4 @@
 #导入Astrbot模块以及第三方模块
-import json
 from encodings.aliases import aliases
 from datetime import datetime
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
@@ -107,9 +106,6 @@ class MyPlugin(Star):
             raw_event.get("post_type") == "notice"
             and raw_event.get("notice_type") == "group_decrease"
         ):
-            logger.info(
-                f"退群事件原始JSON：{json.dumps(raw_event, ensure_ascii=False)}"
-            )
             group_id = raw_event.get("group_id")
             user_id = raw_event.get("user_id")
             if not group_id or not user_id:
