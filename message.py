@@ -478,6 +478,7 @@ async def build_verify_message(context, result, verify_result=None):
         try:
             render_started_at = time.perf_counter()
             logger.info(f"[图片节点] 开始渲染入群审核图片，QQ={user_id}")
+            viewport_height = 500 if reject_reason else 420
             image_path = await html_renderer.render_custom_template(
                 CARD_TEMPLATE,
                 template_data,
@@ -486,7 +487,7 @@ async def build_verify_message(context, result, verify_result=None):
                     "full_page": True,
                     "omit_background": True,
                     "viewport_width": 704,
-                    "viewport_height": 500,
+                    "viewport_height": viewport_height,
                     "type": "png",
                     "quality": 90,
                 },
