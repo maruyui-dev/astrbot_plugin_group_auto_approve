@@ -126,6 +126,22 @@ class MyPlugin(Star):
                 user_info = {}
 
             is_kick = raw_event.get("sub_type") == "kick"
+            operator_id = raw_event.get("operator_id") if is_kick else None
+            operator_nickname = ""
+            if operator_id:
+                try:
+                    operator_info = await event.bot.call_action(
+                        "get_stranger_info",
+                        user_id=operator_id,
+                    )
+                    operator_nickname = (
+                        operator_info.get("nickname")
+                        or operator_info.get("nick")
+                        or str(operator_id)
+                    )
+                except Exception as error:
+                    logger.warning(f"获取退群操作者信息失败: {error}")
+                    operator_nickname = str(operator_id)
             leave_result = {
                 "nickname": user_info.get("nickname")
                 or user_info.get("nick")
@@ -136,9 +152,8 @@ class MyPlugin(Star):
                     raw_event.get("time", 0)
                 ).strftime("%Y-%m-%d %H:%M:%S"),
                 "event_label": "被管理员移出" if is_kick else "自主退群",
-                "operator_id": str(raw_event.get("operator_id", ""))
-                if is_kick
-                else "",
+                "operator_id": str(operator_id or ""),
+                "operator_nickname": operator_nickname,
                 "status_color": "#c64d5c" if is_kick else "#65758b",
                 "status_background": "#fff0f2" if is_kick else "#eef1f5",
             }
