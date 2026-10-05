@@ -405,6 +405,15 @@ LEAVE_TEMPLATE = """
       box-shadow: 0 8px 20px rgba(108, 92, 231, 0.24);
     }
     .ring img { display: block; width: 100%; height: 100%; border-radius: 20px; object-fit: cover; background: #EFEAFF; }
+    .batch-icon {
+      display: grid; place-items: center;
+      flex: 0 0 auto;
+      width: 72px; height: 72px;
+      border-radius: 23px;
+      background: linear-gradient(140deg, #8B6BFF 0%, #FF9A6B 100%);
+      box-shadow: 0 8px 20px rgba(108, 92, 231, 0.24);
+    }
+    .batch-icon svg { width: 38px; height: 38px; }
     .who { min-width: 0; }
     .name { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.01em; }
     .qq { display: flex; align-items: center; gap: 7px; margin-top: 7px; }
@@ -518,12 +527,28 @@ LEAVE_TEMPLATE = """
     </div>
 
     <div class="member">
+      {% if is_batch %}
+      <span class="batch-icon">
+        <svg viewBox="0 0 48 48" fill="none">
+          <circle cx="18" cy="17" r="6" fill="rgba(255,255,255,0.9)"/>
+          <circle cx="32" cy="19" r="5" fill="rgba(255,255,255,0.65)"/>
+          <path d="M7 35c1.8-6.2 5.5-9.2 11-9.2S27.2 28.8 29 35" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+          <path d="M28 29.5h12M34 23.5v12" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <div class="who">
+        <p class="name">批量移出群成员</p>
+        <div class="qq"><span class="qq-tag">数量</span><span class="qq-id">{{ count }} 人</span></div>
+      </div>
+      <span class="status">{{ event_label }}</span>
+      {% else %}
       <span class="ring"><img src="{{ avatar_data }}" alt="退群者头像"></span>
       <div class="who">
         <p class="name">{{ nickname }}</p>
         <div class="qq"><span class="qq-tag">QQ</span><span class="qq-id">{{ user_id }}</span></div>
       </div>
       <span class="status">{{ event_label }}</span>
+      {% endif %}
     </div>
 
     <div class="body">
@@ -543,7 +568,8 @@ LEAVE_TEMPLATE = """
       {% if operator_id %}
       <div class="operator">
         <span class="operator-title">操作人</span>
-        <span class="who-line">{{ operator_nickname }}</span>（QQ：{{ operator_id }}）<br>该成员被管理员移出群聊
+        <span class="who-line">{{ operator_nickname }}</span>（QQ：{{ operator_id }}）<br>
+        {% if is_batch %}本批成员已被管理员移出群聊{% else %}该成员被管理员移出群聊{% endif %}
       </div>
       {% endif %}
 
@@ -623,14 +649,22 @@ def build_leave_text(result):
     Returns:
         A message component chain containing the leave notification.
     """
-    lines = [
-        "-------------------------",
-        "群成员离开了群聊",
-        "",
-        f"退群类型: {result['event_label']}",
-        f"退群者昵称: {result['nickname']}",
-        f"退群者QQ: {result['user_id']}",
-    ]
+    if result.get("is_batch"):
+        lines = [
+            "-------------------------",
+            "群成员批量变动",
+            "",
+            f"本次被管理员移出人数: {result['count']} 人",
+        ]
+    else:
+        lines = [
+            "-------------------------",
+            "群成员离开了群聊",
+            "",
+            f"退群类型: {result['event_label']}",
+            f"退群者昵称: {result['nickname']}",
+            f"退群者QQ: {result['user_id']}",
+        ]
     if result.get("operator_id"):
         lines.append(
             f"操作人昵称: {result.get('operator_nickname', '未知用户')}\n"
@@ -664,7 +698,7 @@ async def build_leave_message(result):
             avatar_data = f"data:{mime_type};base64,{encoded_avatar}"
         except (OSError, ValueError) as error:
             logger.warning(f"读取退群者头像失败，将使用文字消息回退: {error}")
-    if not avatar_data:
+    if not avatar_data and not result.get("is_batch"):
         return build_leave_text(result)
     try:
         viewport_height = 500 if result.get("operator_id") else 420
@@ -672,11 +706,13 @@ async def build_leave_message(result):
             LEAVE_TEMPLATE,
             {
                 "avatar_data": avatar_data,
-                "nickname": _escape(result["nickname"]),
-                "user_id": _escape(result["user_id"]),
-                "group_id": _escape(result["group_id"]),
-                "leave_time": _escape(result["leave_time"]),
-                "event_label": _escape(result["event_label"]),
+                "is_batch": result.get("is_batch", False),
+                "count": result.get("count", 1),
+                "nickname": _escape(result.get("nickname", "群成员")),
+                "user_id": _escape(result.get("user_id", "")),
+                "group_id": _escape(result.get("group_id", "")),
+                "leave_time": _escape(result.get("leave_time", "获取失败")),
+                "event_label": _escape(result.get("event_label", "群成员变动")),
                 "operator_id": _escape(result.get("operator_id", "")),
                 "operator_nickname": _escape(
                     result.get("operator_nickname", "未知用户")
