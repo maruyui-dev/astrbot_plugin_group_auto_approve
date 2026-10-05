@@ -35,5 +35,35 @@
     "type": "bool",
     "default": true,
     "hint": "开启后发送图片，关闭后使用文字消息链"
+  },
+  "ai_cache_ttl": {
+    "description": "AI 审核结果缓存时间（秒）",
+    "type": "int",
+    "default": 600,
+    "hint": "同一申请在此时长内重复到达时直接复用结果，不再调用大模型"
+  },
+  "ai_cache_max": {
+    "description": "AI 审核结果缓存条数上限",
+    "type": "int",
+    "default": 256,
+    "hint": "超过上限后按写入顺序淘汰最早的缓存，避免内存无限增长"
+  },
+  "profile_max_chars": {
+    "description": "群画像最大长度",
+    "type": "int",
+    "default": 1000,
+    "hint": "群名称与群公告拼接出的画像超过此长度会被截断"
+  },
+  "notice_max_chars": {
+    "description": "单条群公告最大长度",
+    "type": "int",
+    "default": 400,
+    "hint": "清洗换行、重复内容后仍然超长的公告会被截断"
+  },
+  "agent_max_steps": {
+    "description": "Agent 最大工具调用轮数",
+    "type": "int",
+    "default": 3,
+    "hint": "越大越费 Token，3 轮足够覆盖绝大多数自然语言指令"
   }
 }

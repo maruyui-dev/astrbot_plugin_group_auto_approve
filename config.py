@@ -51,7 +51,13 @@ _WEBUI_CONFIG = {
     "default_level_required": False,
     "ai_fail_behavior": "skip",
     "reject_reason_max_len": 30,
+    "record_limit": 5,
     "send_images": True,
+    "ai_cache_ttl": 600,
+    "ai_cache_max": 256,
+    "profile_max_chars": 1000,
+    "notice_max_chars": 400,
+    "agent_max_steps": 3,
 }
 
 

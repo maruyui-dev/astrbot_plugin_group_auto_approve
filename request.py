@@ -1,12 +1,20 @@
+import re
 from datetime import datetime
 from pathlib import Path
 
 import aiohttp
 from astrbot.api import logger
 
+from .config import get_webui_config
+
 AVATAR_DIR: Path | None = None
 AVATAR_MAX_BYTES = 5 * 1024 * 1024
 AVATAR_TIMEOUT = aiohttp.ClientTimeout(total=10, connect=5, sock_read=8)
+NOTICE_MAX_CHARS = 400
+
+_NOTICE_TAG_RE = re.compile(r"<[^>]+>")
+_NOTICE_URL_RE = re.compile(r"(?:https?://|www\.)\S+")
+_NOTICE_SPACE_RE = re.compile(r"[\s\u200b\u200c\u200d\ufeff]+")
 
 
 def set_avatar_dir(data_dir: str | Path):
@@ -18,6 +26,33 @@ def set_avatar_dir(data_dir: str | Path):
     global AVATAR_DIR
     AVATAR_DIR = Path(data_dir) / "avatar"
     AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _clean_notice(text) -> str:
+    """Normalise a group notice so it costs less while staying readable.
+
+    Args:
+        text: Raw notice text, which may carry HTML tags and filler links.
+
+    Returns:
+        A single-line notice with markup and links removed, truncated to the
+        configured limit.
+    """
+    cleaned = _NOTICE_TAG_RE.sub(" ", str(text or ""))
+    cleaned = (
+        cleaned.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+    )
+    cleaned = _NOTICE_URL_RE.sub(" ", cleaned)
+    cleaned = _NOTICE_SPACE_RE.sub(" ", cleaned).strip()
+    limit = max(
+        50,
+        int(get_webui_config("notice_max_chars", NOTICE_MAX_CHARS) or NOTICE_MAX_CHARS),
+    )
+    return cleaned[:limit]
+
 
 
 async def handle_group_request(event):
@@ -100,8 +135,8 @@ async def handle_group_request(event):
         logger.error(f"获取群信息失败: {e}")
 
     # 获取群公告
-    group_notice = ""  # 最新一条公告
-    group_notice_first = ""  # 最早一条公告
+    group_notice = ""  # 最新一条有效公告
+    group_notice_first = ""  # 最早一条有效公告
     try:
         notices = await event.bot.call_action(
             "_get_group_notice",
@@ -114,22 +149,18 @@ async def handle_group_request(event):
                 key=lambda n: n.get("publish_time", 0)
             )
 
-            earliest = sorted_notices[0]
-            latest = sorted_notices[-1]
+            # 从新到旧清洗，去掉重复和空公告，只保留有效内容
+            cleaned_notices = []
+            for notice in reversed(sorted_notices):
+                text = _clean_notice(notice.get("message", {}).get("text", ""))
+                if text and text not in cleaned_notices:
+                    cleaned_notices.append(text)
 
-            # 最新公告
-            group_notice = latest.get("message", {}).get("text", "")
-            group_notice = group_notice.replace("&nbsp;", " ")
-            group_notice = group_notice[:500]
-
-            # 最早公告
-            group_notice_first = earliest.get("message", {}).get("text", "")
-            group_notice_first = group_notice_first.replace("&nbsp;", " ")
-            group_notice_first = group_notice_first[:500]
-
-            # 如果只有一条，避免两条内容重复
-            if len(sorted_notices) == 1:
-                group_notice_first = ""
+            if cleaned_notices:
+                group_notice = cleaned_notices[0]
+                # 只有一条有效公告时不再重复发送历史公告
+                if len(cleaned_notices) > 1:
+                    group_notice_first = cleaned_notices[-1]
 
     except Exception as e:
         logger.error(f"获取群公告失败: {e}")

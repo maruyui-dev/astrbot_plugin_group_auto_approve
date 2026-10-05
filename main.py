@@ -2,7 +2,6 @@ import asyncio
 import time
 
 #导入Astrbot模块以及第三方模块
-from encodings.aliases import aliases
 from datetime import datetime
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, StarTools, register
@@ -63,6 +62,27 @@ from .record_message import build_review_records_message, build_review_records_t
 
 _DEDUP_CONTEXT_KEY = "_group_auto_approve_event_dedup_state"
 _KICK_BATCH_CONTEXT_KEY = "_group_auto_approve_kick_batch_state"
+_DEDUP_STATS_LOG_INTERVAL = 100
+_RECORD_QUERY_KEYWORDS = ("审核记录", "申请记录", "查看记录")
+# 出现这些词说明用户在改配置或名单，不能走固定格式的快捷回复
+_CONFIG_QUERY_KEYWORDS = (
+    "黑名单",
+    "白名单",
+    "名单",
+    "等级",
+    "开关",
+    "开启",
+    "关闭",
+    "切换",
+    "清空",
+    "删除",
+    "移除",
+    "设置",
+    "添加",
+    "配置",
+    "帮助",
+    "help",
+)
 
 
 async def build_application_message(context, result, verify_result=None):
@@ -85,7 +105,7 @@ async def build_application_message(context, result, verify_result=None):
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.7.0"
+    "1.8.0"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -93,7 +113,11 @@ class MyPlugin(Star):
         self.plugin_config = config or {}
         dedup_state = getattr(context, _DEDUP_CONTEXT_KEY, None)
         if dedup_state is None:
-            dedup_state = {"seen": {}, "lock": asyncio.Lock()}
+            dedup_state = {
+                "seen": {},
+                "lock": asyncio.Lock(),
+                "stats": {},
+            }
             setattr(context, _DEDUP_CONTEXT_KEY, dedup_state)
         self._dedup_state = dedup_state
         batch_state = getattr(context, _KICK_BATCH_CONTEXT_KEY, None)
@@ -153,6 +177,12 @@ class MyPlugin(Star):
                 and now - previous_event[0] < previous_event[1]
                 for event_key, _ in event_keys
             ):
+                stats = self._dedup_state.setdefault("stats", {})
+                stats[scope] = stats.get(scope, 0) + 1
+                if stats[scope] % _DEDUP_STATS_LOG_INTERVAL == 0:
+                    logger.info(
+                        f"事件去重统计：{scope} 已拦截 {stats[scope]} 次重复事件"
+                    )
                 return True
             for event_key, dedup_ttl in event_keys:
                 seen_events[event_key] = (now, dedup_ttl)
@@ -265,7 +295,6 @@ class MyPlugin(Star):
         return build_leave_text(result)
 
     async def initialize(self):
-        from .config import set_webui_config
         plugin_data_dir = StarTools.get_data_dir("astrbot_plugin_group_auto_approve")
         set_plugin_data_dir(plugin_data_dir)
         set_avatar_dir(plugin_data_dir)
@@ -307,23 +336,7 @@ class MyPlugin(Star):
                 logger.warning(f"获取退群者信息失败，将使用QQ号作为昵称: {error}")
                 user_info = {}
 
-            is_kick = raw_event.get("sub_type") == "kick"
-            operator_id = raw_event.get("operator_id") if is_kick else None
-            operator_nickname = ""
-            if operator_id:
-                try:
-                    operator_info = await event.bot.call_action(
-                        "get_stranger_info",
-                        user_id=operator_id,
-                    )
-                    operator_nickname = (
-                        operator_info.get("nickname")
-                        or operator_info.get("nick")
-                        or str(operator_id)
-                    )
-                except Exception as error:
-                    logger.warning(f"获取退群操作者信息失败: {error}")
-                    operator_nickname = str(operator_id)
+            # sub_type 为 kick 的事件已在上方分支返回，这里只可能是自主退群
             leave_result = {
                 "nickname": user_info.get("nickname")
                 or user_info.get("nick")
@@ -333,11 +346,11 @@ class MyPlugin(Star):
                 "leave_time": datetime.fromtimestamp(
                     raw_event.get("time", 0)
                 ).strftime("%Y-%m-%d %H:%M:%S"),
-                "event_label": "被管理员移出" if is_kick else "自主退群",
-                "operator_id": str(operator_id or ""),
-                "operator_nickname": operator_nickname,
-                "status_color": "#c64d5c" if is_kick else "#65758b",
-                "status_background": "#fff0f2" if is_kick else "#eef1f5",
+                "event_label": "自主退群",
+                "operator_id": "",
+                "operator_nickname": "",
+                "status_color": "#65758b",
+                "status_background": "#eef1f5",
             }
             if get_webui_config("send_images", True):
                 leave_result["avatar_path"] = await download_avatar(user_id)
@@ -467,7 +480,9 @@ class MyPlugin(Star):
                 event,
                 group_name=result.get("group_name", ""),
                 group_notice=result.get("group_notice", ""),
-                group_notice_first=result.get("group_notice_first", "")
+                group_notice_first=result.get("group_notice_first", ""),
+                applicant_id=str(result.get("user_id") or ""),
+                request_flag=str(result.get("flag") or "")
             )
         except Exception as e:
             logger.error(f"调用 AI 验证异常: {e}")
@@ -575,7 +590,7 @@ class MyPlugin(Star):
 
         is_admin = await _is_group_admin(event)
         record_query_requested = any(
-            keyword in text for keyword in ("审核记录", "申请记录", "查看记录")
+            keyword in text for keyword in _RECORD_QUERY_KEYWORDS
         )
         if not is_admin and not record_query_requested:
             yield event.plain_result("权限不足：只有群管理员或群主才能使用此功能。")
@@ -593,37 +608,55 @@ class MyPlugin(Star):
             )
             return
 
+        # 固定格式的查记录请求直接复用指令逻辑，完全不需要进入 Agent
+        if record_query_requested and not any(
+            keyword in text for keyword in _CONFIG_QUERY_KEYWORDS
+        ):
+            page = 1
+            for token in text.replace("第", " ").split():
+                if token.isdigit():
+                    page = max(1, int(token))
+                    break
+            reply = await self._review_records_reply(event, page)
+            if reply is not None:
+                yield reply
+            return
+
         provider_id = await self.context.get_current_chat_provider_id(
             event.unified_msg_origin
         )
 
-        tools = ToolSet([
-            SetVerifySwitchTool(),
-            SetMinLevelTool(),
-            SetLevelRequiredTool(),
-            AddBlacklistTool(),
-            RemoveBlacklistTool(),
-            ClearBlacklistTool(),
-            AddWhitelistTool(),
-            RemoveWhitelistTool(),
-            ClearWhitelistTool(),
-            GetListsTool(),
-            GetConfigTool(),
-            GetReviewRecordsTool(),
-            ClearReviewRecordsTool(),
-        ])
+        # 只发送与当前权限相关的工具定义，每少一个工具就少一份固定的输入 Token
+        tools = [GetListsTool(), GetConfigTool(), GetReviewRecordsTool()]
+        if is_admin:
+            tools.extend(
+                [
+                    SetVerifySwitchTool(),
+                    SetMinLevelTool(),
+                    SetLevelRequiredTool(),
+                    AddBlacklistTool(),
+                    RemoveBlacklistTool(),
+                    ClearBlacklistTool(),
+                    AddWhitelistTool(),
+                    RemoveWhitelistTool(),
+                    ClearWhitelistTool(),
+                    ClearReviewRecordsTool(),
+                ]
+            )
 
+        max_steps = max(1, int(get_webui_config("agent_max_steps", 3) or 3))
         llm_resp = await self.context.tool_loop_agent(
             event=event,
             chat_provider_id=provider_id,
             prompt=text,
             system_prompt=(
-                "你是群管助手。根据用户的要求调用合适的工具。"
+                "你是群管助手。根据用户的要求调用合适的工具，一次只调用必要的工具。"
+                "工具已经返回结果或者已经直接发送内容时，本轮任务就结束了，"
+                "不要再复述工具结果、不要再调用工具、也不要编造不存在的功能。"
                 "审核记录查询允许所有群成员使用，其他配置和名单管理操作仅限管理员。"
-                "只使用提供的工具，不要编造不存在的功能。"
             ),
-            tools=tools,
-            max_steps=10,
+            tools=ToolSet(tools),
+            max_steps=max_steps,
         )
 
         if llm_resp and llm_resp.completion_text:
@@ -745,13 +778,41 @@ class MyPlugin(Star):
 
         yield event.plain_result(f"无法识别的操作：{op}")
 
-    @group_verify.command("记录", alias={"records", "Record"})
-    async def review_records(self, event: AstrMessageEvent):
+    async def _review_records_reply(self, event: AstrMessageEvent, page: int):
+        """Build one page of review records for the current group.
+
+        Args:
+            event: Current AstrBot event.
+            page: One-based page number to render.
+
+        Returns:
+            A message event result holding the rendered image or the text
+            fallback, or None when the group is unknown.
+        """
         group_id = event.get_group_id()
         if not group_id:
-            yield event.plain_result("该指令只能在群聊中使用")
-            return
+            return event.plain_result("该指令只能在群聊中使用")
 
+        records, total_pages = get_review_records(group_id, page=page, page_size=5)
+        if not records:
+            return event.plain_result("没有找到对应页码的审核记录。")
+
+        if get_webui_config("send_images", True):
+            group_avatar_path = await download_group_avatar(group_id)
+            return event.chain_result(
+                await build_review_records_message(
+                    records,
+                    group_avatar_path,
+                    page,
+                    total_pages,
+                )
+            )
+        return event.chain_result(
+            build_review_records_text(records, page, total_pages)
+        )
+
+    @group_verify.command("记录", alias={"records", "Record"})
+    async def review_records(self, event: AstrMessageEvent):
         page = 1
         args = event.message_str.strip().split()
         if len(args) >= 3:
@@ -761,25 +822,9 @@ class MyPlugin(Star):
                 yield event.plain_result("页码必须是数字，例如：/验证 记录 2")
                 return
 
-        records, total_pages = get_review_records(group_id, page=page, page_size=5)
-        if not records:
-            yield event.plain_result("没有找到对应页码的审核记录。")
-            return
-
-        if get_webui_config("send_images", True):
-            group_avatar_path = await download_group_avatar(group_id)
-            yield event.chain_result(
-                await build_review_records_message(
-                    records,
-                    group_avatar_path,
-                    page,
-                    total_pages,
-                )
-            )
-        else:
-            yield event.chain_result(
-                build_review_records_text(records, page, total_pages)
-            )
+        reply = await self._review_records_reply(event, page)
+        if reply is not None:
+            yield reply
 
     @group_verify.command("清空记录", alias={"clear_records", "ClearRecords"})
     async def clear_records(self, event: AstrMessageEvent):

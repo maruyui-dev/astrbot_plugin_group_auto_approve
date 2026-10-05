@@ -8,6 +8,10 @@ from astrbot.api import logger
 
 from .config import SYSTEM_PROMPT, get_webui_config
 
+_STATE_ATTR = "_group_auto_approve_ai_state"
+_PROFILE_CACHE_MAX = 32
+_STATS_LOG_INTERVAL = 50
+
 
 def parse_question_answer(comment):
     """Parse the question and answer from an application comment."""
@@ -28,8 +32,15 @@ async def verify_by_llm(
     group_name="",
     group_notice="",
     group_notice_first="",
+    applicant_id="",
+    request_flag="",
 ):
     """Verify an application with a cached, group-specific AI context.
+
+    The cache key covers everything that can change the verdict: the group, the
+    applicant, the request flag and the current group profile. Two applicants who
+    submit the same answer therefore never share one another's result, while a
+    duplicate delivery of the same request reuses a single model call.
 
     Args:
         context: AstrBot plugin context.
@@ -38,6 +49,8 @@ async def verify_by_llm(
         group_name: Current group name.
         group_notice: Latest group notice.
         group_notice_first: Earliest group notice.
+        applicant_id: QQ number of the applicant.
+        request_flag: Unique flag of the join request when the platform sent one.
 
     Returns:
         A parsed verification result, or None when verification fails.
@@ -46,17 +59,19 @@ async def verify_by_llm(
     if not question or not answer:
         return None
 
-    state = getattr(context, "_group_auto_approve_ai_state", None)
+    state = getattr(context, _STATE_ATTR, None)
     if state is None:
         state = {
             "cache": {},
             "profile_cache": {},
             "inflight": {},
             "lock": asyncio.Lock(),
+            "stats": {"cache_hit": 0, "inflight_join": 0, "request": 0},
         }
-        setattr(context, "_group_auto_approve_ai_state", state)
+        setattr(context, _STATE_ATTR, state)
 
-    raw_profile = "\n".join(
+    group_id = str(event.get_group_id() or "")
+    raw_profile = " ".join(
         part
         for part in (
             f"群名称：{group_name.strip()}" if group_name.strip() else "",
@@ -67,32 +82,53 @@ async def verify_by_llm(
         )
         if part
     )
+    profile_limit = max(200, int(get_webui_config("profile_max_chars", 1000) or 1000))
+    profile = raw_profile[:profile_limit]
     profile_key = hashlib.sha256(
-        f"{event.get_group_id() or ''}\x1f{raw_profile}".encode("utf-8")
+        f"{group_id}\x1f{profile}".encode("utf-8")
     ).hexdigest()
-    async with state["lock"]:
-        profile = state["profile_cache"].get(profile_key)
-        if profile is None:
-            profile = " ".join(raw_profile.split())[:1200]
-            state["profile_cache"] = {profile_key: profile}
 
+    cache_ttl = max(1, int(get_webui_config("ai_cache_ttl", 600) or 600))
+    cache_max = max(1, int(get_webui_config("ai_cache_max", 256) or 256))
     verify_key = hashlib.sha256(
         "\x1f".join(
             (
-                str(event.get_group_id() or ""),
-                profile,
+                group_id,
+                str(applicant_id or ""),
+                str(request_flag or ""),
+                profile_key,
                 question.strip(),
                 answer.strip(),
             )
         ).encode("utf-8")
     ).hexdigest()
+
     now = time.monotonic()
+    result = None
     async with state["lock"]:
-        cached = state["cache"].get(verify_key)
-        if cached and now - cached[0] < 600:
+        profile_cache = state["profile_cache"]
+        if profile_key not in profile_cache:
+            profile_cache[profile_key] = profile
+            while len(profile_cache) > _PROFILE_CACHE_MAX:
+                profile_cache.pop(next(iter(profile_cache)))
+
+        cache = state["cache"]
+        cached = cache.get(verify_key)
+        if cached is not None and now - cached[0] < cache_ttl:
+            state["stats"]["cache_hit"] += 1
             return cached[1]
+        cache.pop(verify_key, None)
+
         task = state["inflight"].get(verify_key)
         if task is None:
+            state["stats"]["request"] += 1
+            if state["stats"]["request"] % _STATS_LOG_INTERVAL == 0:
+                stats = state["stats"]
+                logger.info(
+                    f"AI 审核统计：缓存命中={stats['cache_hit']}，"
+                    f"并发合并={stats['inflight_join']}，"
+                    f"实际请求={stats['request']}"
+                )
             task = asyncio.create_task(
                 _call_verification_llm(
                     context,
@@ -103,6 +139,8 @@ async def verify_by_llm(
                 )
             )
             state["inflight"][verify_key] = task
+        else:
+            state["stats"]["inflight_join"] += 1
 
     try:
         result = await task
@@ -110,8 +148,10 @@ async def verify_by_llm(
         async with state["lock"]:
             if state["inflight"].get(verify_key) is task:
                 state["inflight"].pop(verify_key, None)
-                if "result" in locals() and result is not None:
-                    state["cache"][verify_key] = (time.monotonic(), result)
+                if result is not None:
+                    cache[verify_key] = (time.monotonic(), result)
+                    while len(cache) > cache_max:
+                        cache.pop(next(iter(cache)))
     return result
 
 
