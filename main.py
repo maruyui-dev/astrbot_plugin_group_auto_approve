@@ -9,6 +9,8 @@ from astrbot.api import logger
 import astrbot.api.message_components as Comp
 import aiohttp
 from astrbot.api import ToolSet
+from astrbot.core.star.filter.command import CommandFilter
+from astrbot.core.star.filter.command_group import CommandGroupFilter
 from .agent_tools import (
     SetVerifySwitchTool,
     SetMinLevelTool,
@@ -585,6 +587,36 @@ class MyPlugin(Star):
             return
 
         text = event.message_str.strip()
+
+        # The framework strips the wake prefix before handlers run, so "/note"
+        # reaches this listener as "note" and startswith("/") can never match.
+        # activated_handlers holds every handler that already passed all of its
+        # filters for this event: when another plugin's command matched, step
+        # aside so one message is never answered by two plugins at once.
+        activated_handlers = event.get_extra("activated_handlers")
+        if activated_handlers is not None:
+            for handler in activated_handlers:
+                if handler.handler_name == "agent_listener":
+                    continue
+                if any(
+                    isinstance(event_filter, (CommandFilter, CommandGroupFilter))
+                    for event_filter in (handler.event_filters or ())
+                ):
+                    return
+        else:
+            # Older frameworks do not expose activated_handlers. Fall back to a
+            # conservative rule: skip every explicit wake-prefixed command, and
+            # reach the natural language entry point by @-mentioning the bot.
+            raw_text = (event.message_obj.message_str or "").strip()
+            wake_prefixes = (
+                self.context.get_config(umo=event.unified_msg_origin).get(
+                    "wake_prefix", []
+                )
+                or []
+            )
+            if any(raw_text.startswith(prefix) for prefix in wake_prefixes):
+                return
+
         if text.startswith(("/", "验证", "群组验证", "接收申请", "名单")):
             return
 
