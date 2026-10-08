@@ -11,6 +11,7 @@ import aiohttp
 from astrbot.api import ToolSet
 from astrbot.core.star.filter.command import CommandFilter
 from astrbot.core.star.filter.command_group import CommandGroupFilter
+from astrbot.core.star.filter.regex import RegexFilter
 from .agent_tools import (
     SetVerifySwitchTool,
     SetMinLevelTool,
@@ -591,15 +592,18 @@ class MyPlugin(Star):
         # The framework strips the wake prefix before handlers run, so "/note"
         # reaches this listener as "note" and startswith("/") can never match.
         # activated_handlers holds every handler that already passed all of its
-        # filters for this event: when another plugin's command matched, step
-        # aside so one message is never answered by two plugins at once.
+        # filters for this event: when another plugin's command or regex matched,
+        # step aside so one message is never answered by two plugins at once.
         activated_handlers = event.get_extra("activated_handlers")
         if activated_handlers is not None:
             for handler in activated_handlers:
                 if handler.handler_name == "agent_listener":
                     continue
                 if any(
-                    isinstance(event_filter, (CommandFilter, CommandGroupFilter))
+                    isinstance(
+                        event_filter,
+                        (CommandFilter, CommandGroupFilter, RegexFilter),
+                    )
                     for event_filter in (handler.event_filters or ())
                 ):
                     return
