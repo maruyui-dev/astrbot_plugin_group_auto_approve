@@ -109,7 +109,7 @@ async def build_application_message(context, result, verify_result=None):
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.8.0"
+    "1.8.1"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -701,13 +701,13 @@ class MyPlugin(Star):
 
     @filter.command("群画像")
     async def show_group_profile(self, event: AstrMessageEvent):
-        """Show the current group's effective AI review profile.
+        """Show the current group's effective AI review rubric.
 
         Args:
             event: Incoming command event.
 
         Yields:
-            The profile and its source, or a permission message.
+            The rubric and its source, or a permission message.
         """
         if not event.get_group_id():
             yield event.plain_result("该指令只能在群聊中使用。")
@@ -718,11 +718,11 @@ class MyPlugin(Star):
 
         profile, revision = await get_effective_group_profile(event)
         source = "手动上传" if revision else "自动生成"
-        yield event.plain_result(f"本群 AI 审核画像（{source}）\n{profile or '（空）'}")
+        yield event.plain_result(f"本群 AI 审核标准（{source}）\n{profile}")
 
     @filter.command("上传群画像")
     async def upload_group_profile(self, event: AstrMessageEvent):
-        """Save multiline review context for the group that sent the command.
+        """Save a multiline review rubric for the group that sent the command.
 
         Args:
             event: Incoming command event.
@@ -742,7 +742,7 @@ class MyPlugin(Star):
         profile = event.get_message_str().removeprefix("上传群画像").strip()
         if not profile:
             yield event.plain_result(
-                "用法：/上传群画像 <画像内容>，可在同一条消息中换行。"
+                "用法：/上传群画像 <审核标准>，可在同一条消息中换行。"
             )
             return
 
@@ -754,9 +754,9 @@ class MyPlugin(Star):
                 group_cfg.pop("MANUAL_PROFILE")
             else:
                 group_cfg["MANUAL_PROFILE"] = previous
-            yield event.plain_result("保存失败，本群画像未修改。")
+            yield event.plain_result("保存失败，本群审核标准未修改。")
             return
-        yield event.plain_result("已保存本群 AI 审核画像，下次审核将使用新画像。")
+        yield event.plain_result("已保存本群 AI 审核标准，下次审核将使用新标准。")
 
     @filter.command_group("Group Verify", alias={"群组验证", "验证"})
     def group_verify(self, event: AstrMessageEvent):
@@ -795,8 +795,8 @@ class MyPlugin(Star):
             f"/群组验证 记录 - 查看第1页审核记录（每页5条）\n"
             f"/群组验证 记录 <页码> - 查看指定页审核记录\n"
             f"/群组验证 清空记录 - 清空本群全部审核记录（仅管理员）\n"
-            "/群画像 - 查看本群 AI 审核画像\n"
-            "/上传群画像 <画像内容> - 更新本群 AI 审核画像\n"
+            "/群画像 - 查看本群 AI 审核标准\n"
+            "/上传群画像 <审核标准> - 更新本群 AI 审核标准\n"
             "PS: 加入白名单的人会不用通过AI 审核,直接进群,谨慎加白名单❗"
         )
 

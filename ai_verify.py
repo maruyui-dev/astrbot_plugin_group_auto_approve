@@ -37,7 +37,7 @@ def parse_question_answer(comment):
 async def get_effective_group_profile(
     event, group_name=None, group_notice="", group_notice_first=""
 ) -> tuple[str, str]:
-    """Resolve the exact profile text used in the review prompt.
+    """Resolve the exact group rubric used in the system prompt.
 
     Args:
         event: Current group event.
@@ -46,7 +46,7 @@ async def get_effective_group_profile(
         group_notice_first: Earliest notice already fetched for a request.
 
     Returns:
-        Profile text and the upload revision, empty for an automatic profile.
+        Rubric text and the upload revision, empty for an automatic rubric.
     """
     group_id = event.get_group_id()
     group_cfg = get_group_cfg(group_id)
@@ -60,9 +60,11 @@ async def get_effective_group_profile(
         return manual_profile["text"], manual_profile["revision"]
 
     group_name = (group_name or "").strip()
-    raw_profile = " ".join(
+    raw_profile = "\n".join(
         part
         for part in (
+            "逐项核对验证问题要求的数量、内容和格式。题目要求多个条目时，换行可分隔条目。",
+            "参考以下群资料，仅应用与入群验证直接相关的明确要求。",
             f"群名称：{group_name}" if group_name else "",
             f"最新群公告：{group_notice.strip()}" if group_notice.strip() else "",
             f"历史群公告：{group_notice_first.strip()}"
@@ -85,7 +87,7 @@ async def verify_by_llm(
     applicant_id="",
     request_flag="",
 ):
-    """Verify an application with a cached, group-specific AI context.
+    """Verify an application against the current group's rubric.
 
     The cache key covers everything that can change the verdict: the group, the
     applicant, the request flag and the current group profile. Two applicants who
@@ -123,9 +125,10 @@ async def verify_by_llm(
     profile, revision = await get_effective_group_profile(
         event, group_name, group_notice, group_notice_first
     )
-    # A new upload needs a fresh verdict even when the text matches an older upload.
+    system_prompt = f"{SYSTEM_PROMPT}\n\n本群审核标准：\n{profile}"
+    # Re-evaluate after an upload or a change to the plugin's review instructions.
     profile_key = hashlib.sha256(
-        f"{group_id}\x1f{revision}\x1f{profile}".encode()
+        f"{group_id}\x1f{revision}\x1f{system_prompt}".encode()
     ).hexdigest()
 
     cache_ttl = max(1, int(get_webui_config("ai_cache_ttl", 600) or 600))
@@ -173,7 +176,7 @@ async def verify_by_llm(
                 _call_verification_llm(
                     context,
                     event,
-                    profile,
+                    system_prompt,
                     question,
                     answer,
                 )
@@ -195,13 +198,13 @@ async def verify_by_llm(
     return result
 
 
-async def _call_verification_llm(context, event, profile, question, answer):
-    """Call the model with compact, group-specific verification context.
+async def _call_verification_llm(context, event, system_prompt, question, answer):
+    """Call the model with a group rubric and the applicant's response.
 
     Args:
         context: AstrBot plugin context.
         event: Current AstrBot event.
-        profile: Effective automatic or manually uploaded group profile.
+        system_prompt: Plugin instructions followed by the effective group rubric.
         question: Parsed verification question.
         answer: Parsed applicant answer.
 
@@ -216,16 +219,12 @@ async def _call_verification_llm(context, event, profile, question, answer):
         logger.error(f"获取 provider 失败: {error}")
         return None
 
-    prompt = (
-        f"本群画像与公告摘要：<<<{profile}>>>\n\n"
-        f"问题：<<<{question}>>>\n"
-        f"申请人答案：<<<{answer}>>>"
-    )
+    prompt = f"问题：<<<{question}>>>\n申请人答案：<<<{answer}>>>"
     try:
         llm_resp = await context.llm_generate(
             chat_provider_id=provider_id,
             prompt=prompt,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=system_prompt,
         )
     except Exception as error:
         logger.error(f"入群验证调用大模型失败: {error}")
