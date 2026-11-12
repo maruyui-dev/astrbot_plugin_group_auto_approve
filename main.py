@@ -15,6 +15,7 @@ from astrbot.core.star.filter.command_group import CommandGroupFilter
 from astrbot.core.star.filter.regex import RegexFilter
 from .agent_tools import (
     SetVerifySwitchTool,
+    SetGroupProfileNoticeRefreshTool,
     SetMinLevelTool,
     SetLevelRequiredTool,
     AddBlacklistTool,
@@ -109,7 +110,7 @@ async def build_application_message(context, result, verify_result=None):
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.8.3"
+    "1.8.4"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -639,6 +640,7 @@ class MyPlugin(Star):
                 "· /群管助手 查看黑名单\n"
                 "· /群管助手 把 123456 加入黑名单\n"
                 "· /群管助手 关闭入群验证\n"
+                "· /群管助手 关闭群画像公告自动更新\n"
                 "· /群管助手 设置最低等级 5\n"
                 "· /群管助手 查看第 2 页审核记录\n"
                 "也可以使用 /验证 帮助 查看完整指令。"
@@ -654,6 +656,7 @@ class MyPlugin(Star):
             GetConfigTool(),
             GetReviewRecordsTool(),
             SetVerifySwitchTool(),
+            SetGroupProfileNoticeRefreshTool(),
             SetMinLevelTool(),
             SetLevelRequiredTool(),
             AddBlacklistTool(),
@@ -672,8 +675,8 @@ class MyPlugin(Star):
             prompt=text,
             system_prompt=(
                 "你是群管助手。根据用户的要求调用合适的工具，一次只调用必要的工具。"
-                "工具已经返回结果或者已经直接发送内容时，本轮任务就结束了，"
-                "不要再复述工具结果、不要再调用工具、也不要编造不存在的功能。"
+                "工具已直接发送回复时结束。工具只返回操作结果时，简短告知用户结果后结束。"
+                "不要编造不存在的功能。"
                 "审核记录查询允许所有群成员使用，其他配置和名单管理操作仅限管理员。"
             ),
             tools=ToolSet(tools),
@@ -724,41 +727,10 @@ class MyPlugin(Star):
             The saved setting, usage instructions, or a permission message.
         """
         reply = event.make_result().use_t2i(False).use_markdown(False)
-        group_id = event.get_group_id()
-        if not group_id:
-            yield reply.message("该指令只能在群聊中使用。")
-            return
-        if not await _is_group_admin(event):
-            yield reply.message("权限不足：只有群管理员或群主才能使用此指令。")
-            return
-
         args = event.get_message_str().split()[1:]
-        if args not in (["开"], ["关"]):
-            yield reply.message("用法：/群画像公告更新 开 或 /群画像公告更新 关")
-            return
-
-        frozen_profile = None
-        if args == ["关"]:
-            frozen_profile, _ = await get_effective_group_profile(
-                event, automatic_only=True
-            )
-
-        group_cfg = get_group_cfg(group_id)
-        previous = group_cfg.pop("FROZEN_AUTO_PROFILE", None)
-        if frozen_profile is not None:
-            group_cfg["FROZEN_AUTO_PROFILE"] = frozen_profile
-        if frozen_profile != previous and not save_all():
-            if previous is None:
-                group_cfg.pop("FROZEN_AUTO_PROFILE")
-            else:
-                group_cfg["FROZEN_AUTO_PROFILE"] = previous
-            yield reply.message("保存失败，本群的公告自动更新设置未修改。")
-            return
-
+        enabled = {"开": True, "关": False}.get(args[0]) if len(args) == 1 else None
         yield reply.message(
-            "已关闭公告自动更新，保留本群当前的自动画像。"
-            if frozen_profile is not None
-            else "已开启公告自动更新，本群自动画像将跟随群公告。"
+            await SetGroupProfileNoticeRefreshTool.set_enabled(event, enabled)
         )
 
     @filter.command("上传群画像")

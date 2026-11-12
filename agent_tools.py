@@ -1,5 +1,7 @@
 from astrbot.api import FunctionTool, logger
 from astrbot.core.message.message_event_result import MessageChain
+
+from .ai_verify import get_effective_group_profile
 from .config import (
     get_group_cfg,
     get_webui_config,
@@ -57,6 +59,83 @@ class SetVerifySwitchTool(FunctionTool):
         cfg["REQUEST_CONFIG"] = kwargs["enabled"]
         save_all()
         return f"已{'开启' if kwargs['enabled'] else '关闭'}本群入群验证。"
+
+
+class SetGroupProfileNoticeRefreshTool(FunctionTool):
+    """Control whether group announcements refresh the automatic review profile."""
+
+    def __init__(self):
+        super().__init__(
+            name="set_group_profile_notice_refresh",
+            description=(
+                "开启或关闭本群的群画像随群公告自动更新。开启后跟随最新群公告，"
+                "关闭后保留当前自动画像。手动画像始终优先。"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "true 开启公告自动更新，false 关闭。",
+                    },
+                },
+                "required": ["enabled"],
+            },
+        )
+
+    async def call(self, context, **kwargs):
+        """Apply the switch requested by the agent.
+
+        Args:
+            context: Agent context containing the original group event.
+            **kwargs: Tool arguments containing the requested enabled state.
+
+        Returns:
+            The switch result for the agent.
+        """
+        return await self.set_enabled(context.context.event, kwargs.get("enabled"))
+
+    @staticmethod
+    async def set_enabled(event, enabled: bool | None) -> str:
+        """Save the current group's setting for either entry point.
+
+        Args:
+            event: Group event that identifies the caller and target group.
+            enabled: Whether to follow announcements, or None for invalid input.
+
+        Returns:
+            A save confirmation or a message describing why no setting was saved.
+        """
+        group_id = event.get_group_id()
+        if not group_id:
+            return "该指令只能在群聊中使用。"
+        if not await _is_group_admin(event):
+            return "权限不足：只有群管理员或群主才能使用此指令。"
+        if not isinstance(enabled, bool):
+            return "用法：/群画像公告更新 开 或 /群画像公告更新 关"
+
+        frozen_profile = None
+        if not enabled:
+            frozen_profile, _ = await get_effective_group_profile(
+                event, automatic_only=True
+            )
+
+        group_cfg = get_group_cfg(group_id)
+        previous = group_cfg.pop("FROZEN_AUTO_PROFILE", None)
+        if frozen_profile is not None:
+            group_cfg["FROZEN_AUTO_PROFILE"] = frozen_profile
+        if frozen_profile != previous and not save_all():
+            if previous is None:
+                group_cfg.pop("FROZEN_AUTO_PROFILE")
+            else:
+                group_cfg["FROZEN_AUTO_PROFILE"] = previous
+            return "保存失败，本群的公告自动更新设置未修改。"
+
+        return (
+            "已开启公告自动更新，本群自动画像将跟随群公告。"
+            if enabled
+            else "已关闭公告自动更新，保留本群当前的自动画像。"
+        )
 
 
 class SetMinLevelTool(FunctionTool):

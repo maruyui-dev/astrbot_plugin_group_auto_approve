@@ -89,6 +89,8 @@ Group owners and administrators can send `/群管助手 <operation>` in a group 
 
 ```text
 /群管助手 Disable automatic review for this group.
+/群管助手 Disable automatic profile updates from group announcements.
+/群管助手 Enable automatic profile updates from group announcements.
 /群管助手 Add QQ user 123456789 to the whitelist.
 /群管助手 Show the users currently on the whitelist.
 ```
