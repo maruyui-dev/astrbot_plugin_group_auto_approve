@@ -55,6 +55,42 @@ def _clean_notice(text) -> str:
 
 
 
+async def get_group_review_context(event, group_id):
+    """Fetch the group name and the notices used for the automatic profile.
+
+    Args:
+        event: Current OneBot event.
+        group_id: QQ group ID.
+
+    Returns:
+        The group name, latest notice and earliest distinct notice.
+    """
+    group_name = ""
+    try:
+        group_info = await event.bot.call_action("get_group_info", group_id=group_id)
+        group_name = group_info.get("group_name", "")
+    except Exception as error:
+        logger.error(f"Failed to get group info: {error}")
+
+    cleaned_notices = []
+    try:
+        notices = await event.bot.call_action("_get_group_notice", group_id=group_id)
+        sorted_notices = sorted(
+            notices or (), key=lambda notice: notice.get("publish_time", 0)
+        )
+        for notice in reversed(sorted_notices):
+            text = _clean_notice(notice.get("message", {}).get("text", ""))
+            if text and text not in cleaned_notices:
+                cleaned_notices.append(text)
+    except Exception as error:
+        logger.error(f"Failed to get group notices: {error}")
+        cleaned_notices.clear()
+
+    group_notice = cleaned_notices[0] if cleaned_notices else ""
+    group_notice_first = cleaned_notices[-1] if len(cleaned_notices) > 1 else ""
+    return group_name, group_notice, group_notice_first
+
+
 async def handle_group_request(event):
 
     raw_event = event.message_obj.raw_message
@@ -123,47 +159,9 @@ async def handle_group_request(event):
             or 0
     )
 
-    # 获取群名称
-    group_name = ""
-    try:
-        group_info = await event.bot.call_action(
-            "get_group_info",
-            group_id=group_id
-        )
-        group_name = group_info.get("group_name", "")
-    except Exception as e:
-        logger.error(f"获取群信息失败: {e}")
-
-    # 获取群公告
-    group_notice = ""  # 最新一条有效公告
-    group_notice_first = ""  # 最早一条有效公告
-    try:
-        notices = await event.bot.call_action(
-            "_get_group_notice",
-            group_id=group_id
-        )
-        if notices:
-            # 按 publish_time 升序排序：索引 0 是最早，最后是最新
-            sorted_notices = sorted(
-                notices,
-                key=lambda n: n.get("publish_time", 0)
-            )
-
-            # 从新到旧清洗，去掉重复和空公告，只保留有效内容
-            cleaned_notices = []
-            for notice in reversed(sorted_notices):
-                text = _clean_notice(notice.get("message", {}).get("text", ""))
-                if text and text not in cleaned_notices:
-                    cleaned_notices.append(text)
-
-            if cleaned_notices:
-                group_notice = cleaned_notices[0]
-                # 只有一条有效公告时不再重复发送历史公告
-                if len(cleaned_notices) > 1:
-                    group_notice_first = cleaned_notices[-1]
-
-    except Exception as e:
-        logger.error(f"获取群公告失败: {e}")
+    group_name, group_notice, group_notice_first = await get_group_review_context(
+        event, group_id
+    )
 
     return {
         "success": True,

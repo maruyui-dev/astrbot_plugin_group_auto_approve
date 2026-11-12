@@ -3,6 +3,7 @@ import time
 
 #导入Astrbot模块以及第三方模块
 from datetime import datetime
+from uuid import uuid4
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.api import logger
@@ -42,7 +43,7 @@ from .request import (
     handle_group_request,
     set_avatar_dir,
 )
-from .ai_verify import verify_by_llm
+from .ai_verify import get_effective_group_profile, verify_by_llm
 from .config import (
     get_group_cfg,
     save_all,
@@ -698,6 +699,64 @@ class MyPlugin(Star):
         if llm_resp and llm_resp.completion_text:
             yield event.plain_result(llm_resp.completion_text)
 
+    @filter.command("群画像")
+    async def show_group_profile(self, event: AstrMessageEvent):
+        """Show the current group's effective AI review profile.
+
+        Args:
+            event: Incoming command event.
+
+        Yields:
+            The profile and its source, or a permission message.
+        """
+        if not event.get_group_id():
+            yield event.plain_result("该指令只能在群聊中使用。")
+            return
+        if not await _is_group_admin(event):
+            yield event.plain_result("权限不足：只有群管理员或群主才能使用此指令。")
+            return
+
+        profile, revision = await get_effective_group_profile(event)
+        source = "手动上传" if revision else "自动生成"
+        yield event.plain_result(f"本群 AI 审核画像（{source}）\n{profile or '（空）'}")
+
+    @filter.command("上传群画像")
+    async def upload_group_profile(self, event: AstrMessageEvent):
+        """Save multiline review context for the group that sent the command.
+
+        Args:
+            event: Incoming command event.
+
+        Yields:
+            The save result, usage instructions, or a permission message.
+        """
+        group_id = event.get_group_id()
+        if not group_id:
+            yield event.plain_result("该指令只能在群聊中使用。")
+            return
+        if not await _is_group_admin(event):
+            yield event.plain_result("权限不足：只有群管理员或群主才能使用此指令。")
+            return
+
+        # CommandFilter normalizes whitespace in its arguments.
+        profile = event.get_message_str().removeprefix("上传群画像").strip()
+        if not profile:
+            yield event.plain_result(
+                "用法：/上传群画像 <画像内容>，可在同一条消息中换行。"
+            )
+            return
+
+        group_cfg = get_group_cfg(group_id)
+        previous = group_cfg.get("MANUAL_PROFILE")
+        group_cfg["MANUAL_PROFILE"] = {"text": profile, "revision": uuid4().hex}
+        if not save_all():
+            if previous is None:
+                group_cfg.pop("MANUAL_PROFILE")
+            else:
+                group_cfg["MANUAL_PROFILE"] = previous
+            yield event.plain_result("保存失败，本群画像未修改。")
+            return
+        yield event.plain_result("已保存本群 AI 审核画像，下次审核将使用新画像。")
 
     @filter.command_group("Group Verify", alias={"群组验证", "验证"})
     def group_verify(self, event: AstrMessageEvent):
@@ -736,6 +795,8 @@ class MyPlugin(Star):
             f"/群组验证 记录 - 查看第1页审核记录（每页5条）\n"
             f"/群组验证 记录 <页码> - 查看指定页审核记录\n"
             f"/群组验证 清空记录 - 清空本群全部审核记录（仅管理员）\n"
+            "/群画像 - 查看本群 AI 审核画像\n"
+            "/上传群画像 <画像内容> - 更新本群 AI 审核画像\n"
             "PS: 加入白名单的人会不用通过AI 审核,直接进群,谨慎加白名单❗"
         )
 

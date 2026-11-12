@@ -6,7 +6,8 @@ import time
 
 from astrbot.api import logger
 
-from .config import SYSTEM_PROMPT, get_webui_config
+from .config import SYSTEM_PROMPT, get_group_cfg, get_webui_config
+from .request import get_group_review_context
 
 _STATE_ATTR = "_group_auto_approve_ai_state"
 _PROFILE_CACHE_MAX = 32
@@ -14,15 +15,64 @@ _STATS_LOG_INTERVAL = 50
 
 
 def parse_question_answer(comment):
-    """Parse the question and answer from an application comment."""
+    """Parse the question and preserve line breaks in the answer.
+
+    Args:
+        comment: Raw OneBot application comment.
+
+    Returns:
+        The question and the full answer, with None for a missing field.
+    """
     question = None
-    answer = None
-    for line in comment.splitlines():
-        if line.startswith("问题："):
-            question = line.replace("问题：", "").strip()
-        elif line.startswith("答案："):
-            answer = line.replace("答案：", "").strip()
-    return question, answer
+    lines = comment.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        line = line.lstrip()
+        if line.startswith(("问题：", "问题:")):
+            question = line[3:].strip()
+        elif line.startswith(("答案：", "答案:")):
+            return question, (line[3:] + "".join(lines[index + 1 :])).strip()
+    return question, None
+
+
+async def get_effective_group_profile(
+    event, group_name=None, group_notice="", group_notice_first=""
+) -> tuple[str, str]:
+    """Resolve the exact profile text used in the review prompt.
+
+    Args:
+        event: Current group event.
+        group_name: Name already fetched for a request, or None to fetch group context.
+        group_notice: Latest notice already fetched for a request.
+        group_notice_first: Earliest notice already fetched for a request.
+
+    Returns:
+        Profile text and the upload revision, empty for an automatic profile.
+    """
+    group_id = event.get_group_id()
+    group_cfg = get_group_cfg(group_id)
+    if group_name is None and not group_cfg.get("MANUAL_PROFILE"):
+        group_name, group_notice, group_notice_first = await get_group_review_context(
+            event, group_id
+        )
+
+    manual_profile = group_cfg.get("MANUAL_PROFILE")
+    if manual_profile:
+        return manual_profile["text"], manual_profile["revision"]
+
+    group_name = (group_name or "").strip()
+    raw_profile = " ".join(
+        part
+        for part in (
+            f"群名称：{group_name}" if group_name else "",
+            f"最新群公告：{group_notice.strip()}" if group_notice.strip() else "",
+            f"历史群公告：{group_notice_first.strip()}"
+            if group_notice_first.strip()
+            else "",
+        )
+        if part
+    )
+    profile_limit = max(200, int(get_webui_config("profile_max_chars", 1000) or 1000))
+    return raw_profile[:profile_limit], ""
 
 
 async def verify_by_llm(
@@ -70,21 +120,12 @@ async def verify_by_llm(
     state.setdefault("stats", {"cache_hit": 0, "inflight_join": 0, "request": 0})
 
     group_id = str(event.get_group_id() or "")
-    raw_profile = " ".join(
-        part
-        for part in (
-            f"群名称：{group_name.strip()}" if group_name.strip() else "",
-            f"最新群公告：{group_notice.strip()}" if group_notice.strip() else "",
-            f"历史群公告：{group_notice_first.strip()}"
-            if group_notice_first.strip()
-            else "",
-        )
-        if part
+    profile, revision = await get_effective_group_profile(
+        event, group_name, group_notice, group_notice_first
     )
-    profile_limit = max(200, int(get_webui_config("profile_max_chars", 1000) or 1000))
-    profile = raw_profile[:profile_limit]
+    # A new upload needs a fresh verdict even when the text matches an older upload.
     profile_key = hashlib.sha256(
-        f"{group_id}\x1f{profile}".encode("utf-8")
+        f"{group_id}\x1f{revision}\x1f{profile}".encode()
     ).hexdigest()
 
     cache_ttl = max(1, int(get_webui_config("ai_cache_ttl", 600) or 600))
@@ -160,7 +201,7 @@ async def _call_verification_llm(context, event, profile, question, answer):
     Args:
         context: AstrBot plugin context.
         event: Current AstrBot event.
-        profile: Cached context from the current group's name and notices.
+        profile: Effective automatic or manually uploaded group profile.
         question: Parsed verification question.
         answer: Parsed applicant answer.
 

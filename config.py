@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from astrbot.api import logger
 
@@ -99,7 +100,7 @@ def get_config_data():
     return _CONFIG_DATA
 
 def save_all():
-    save_config(get_config_data())
+    return save_config(get_config_data())
 
 def get_group_cfg(group_id):
     return get_group_config(get_config_data(), group_id)
@@ -126,16 +127,35 @@ def load_config():
     return data
 
 
-def save_config(data):
-    """修改后调用：把当前配置写回 JSON"""
+def save_config(data) -> bool:
+    """Replace the saved config after the new JSON has been written.
+
+    Args:
+        data: Current plugin configuration.
+
+    Returns:
+        Whether the new config was saved.
+    """
     if CONFIG_FILE is None:
         logger.error("Plugin data directory has not been initialized")
-        return
+        return False
+    temporary_path = None
     try:
-        with CONFIG_FILE.open("w", encoding="utf-8") as f:
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=CONFIG_FILE.parent, delete=False
+        ) as f:
+            temporary_path = Path(f.name)
             json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error(f"写入 runtime_config.json 失败: {e}")
+        temporary_path.replace(CONFIG_FILE)
+    except Exception as error:
+        logger.error(f"Failed to save runtime_config.json: {error}")
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                logger.warning(f"Failed to remove temporary config: {cleanup_error}")
+        return False
+    return True
 
 
 def get_group_config(config_data, group_id):
