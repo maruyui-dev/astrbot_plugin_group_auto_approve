@@ -91,11 +91,14 @@ Group owners and administrators can send `/群管助手 <operation>` in a group 
 /群管助手 Disable automatic review for this group.
 /群管助手 Disable automatic profile updates from group announcements.
 /群管助手 Enable automatic profile updates from group announcements.
+/群管助手 I want to upload a new review rubric for this group.
 /群管助手 Add QQ user 123456789 to the whitelist.
 /群管助手 Show the users currently on the whitelist.
 ```
 
 All group members can use `/验证 记录` or `/群管助手 查看审核记录` to view their group's review records.
+
+Group owners and administrators can start a profile upload with `上传群画像`, `/上传群画像`, or the agent. After the bot prompts for the rubric, the same sender has five minutes to post it as a plain text message in the same group. Line breaks are preserved.
 
 ## Configuration
 

@@ -16,6 +16,7 @@ from astrbot.core.star.filter.regex import RegexFilter
 from .agent_tools import (
     SetVerifySwitchTool,
     SetGroupProfileNoticeRefreshTool,
+    StartGroupProfileUploadTool,
     SetMinLevelTool,
     SetLevelRequiredTool,
     AddBlacklistTool,
@@ -68,6 +69,7 @@ from .record_message import build_review_records_message, build_review_records_t
 _DEDUP_CONTEXT_KEY = "_group_auto_approve_event_dedup_state"
 _KICK_BATCH_CONTEXT_KEY = "_group_auto_approve_kick_batch_state"
 _DEDUP_STATS_LOG_INTERVAL = 100
+_PROFILE_UPLOAD_TIMEOUT = 300
 _RECORD_QUERY_KEYWORDS = ("审核记录", "申请记录", "查看记录")
 # 出现这些词说明用户在改配置或名单，不能走固定格式的快捷回复
 _CONFIG_QUERY_KEYWORDS = (
@@ -110,12 +112,13 @@ async def build_application_message(context, result, verify_result=None):
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.8.4"
+    "1.8.5"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
         super().__init__(context, config)
         self.plugin_config = config or {}
+        self._pending_profile_uploads: dict[tuple[str, str, str, str], float] = {}
         dedup_state = getattr(context, _DEDUP_CONTEXT_KEY, None)
         if not isinstance(dedup_state, dict) or "lock" not in dedup_state:
             dedup_state = {"lock": asyncio.Lock()}
@@ -316,6 +319,13 @@ class MyPlugin(Star):
         if await self._is_duplicate_event(event, "main"):
             return
         raw_event = event.message_obj.raw_message
+        if raw_event.get("post_type") == "message":
+            reply = await self._receive_group_profile(event)
+            if reply is not None:
+                yield reply
+                event.stop_event()
+            return
+
         if (
             raw_event.get("post_type") == "notice"
             and raw_event.get("notice_type") == "group_decrease"
@@ -641,6 +651,7 @@ class MyPlugin(Star):
                 "· /群管助手 把 123456 加入黑名单\n"
                 "· /群管助手 关闭入群验证\n"
                 "· /群管助手 关闭群画像公告自动更新\n"
+                "· /群管助手 我要上传群画像\n"
                 "· /群管助手 设置最低等级 5\n"
                 "· /群管助手 查看第 2 页审核记录\n"
                 "也可以使用 /验证 帮助 查看完整指令。"
@@ -657,6 +668,7 @@ class MyPlugin(Star):
             GetReviewRecordsTool(),
             SetVerifySwitchTool(),
             SetGroupProfileNoticeRefreshTool(),
+            StartGroupProfileUploadTool(self._handle_group_profile_upload),
             SetMinLevelTool(),
             SetLevelRequiredTool(),
             AddBlacklistTool(),
@@ -683,7 +695,7 @@ class MyPlugin(Star):
             max_steps=max_steps,
         )
 
-        if llm_resp and llm_resp.completion_text:
+        if llm_resp and llm_resp.completion_text and not event.is_stopped():
             yield event.plain_result(llm_resp.completion_text)
 
     @filter.command("群画像")
@@ -735,28 +747,107 @@ class MyPlugin(Star):
 
     @filter.command("上传群画像")
     async def upload_group_profile(self, event: AstrMessageEvent):
-        """Save a multiline review rubric for the group that sent the command.
+        """Start a group profile upload or save text included in the command.
 
         Args:
             event: Incoming command event.
 
         Yields:
-            The save result, usage instructions, or a permission message.
+            The waiting prompt, save result, or a permission message.
+        """
+        # CommandFilter normalizes whitespace in its arguments.
+        parts = event.get_message_str().split(maxsplit=1)
+        profile = parts[1] if len(parts) > 1 else ""
+        yield await self._handle_group_profile_upload(event, profile)
+
+    async def _receive_group_profile(
+        self, event: AstrMessageEvent
+    ) -> MessageEventResult | None:
+        """Route a plain upload request or the pending administrator's next text.
+
+        Args:
+            event: Incoming OneBot message.
+
+        Returns:
+            An upload reply, or None when the message belongs to another flow.
+        """
+        group_id = event.get_group_id()
+        text = event.get_message_str().strip()
+        if not group_id or not text:
+            return None
+        if text != (event.message_obj.message_str or "").strip():
+            return None
+
+        start_upload = text == "上传群画像"
+        if not start_upload:
+            key = (
+                event.get_platform_id(),
+                event.get_self_id(),
+                group_id,
+                event.get_sender_id(),
+            )
+            deadline = self._pending_profile_uploads.get(key)
+            if deadline is None:
+                return None
+            if deadline <= time.monotonic():
+                self._pending_profile_uploads.pop(key)
+                return None
+
+        if not all(
+            isinstance(component, Comp.Plain) for component in event.get_messages()
+        ):
+            return None
+        if any(
+            isinstance(event_filter, (CommandFilter, CommandGroupFilter, RegexFilter))
+            for handler in event.get_extra("activated_handlers") or ()
+            for event_filter in handler.event_filters or ()
+        ):
+            return None
+
+        return await self._handle_group_profile_upload(
+            event, "" if start_upload else text
+        )
+
+    async def _handle_group_profile_upload(
+        self, event: AstrMessageEvent, profile: str = ""
+    ) -> MessageEventResult:
+        """Start waiting or save a review rubric through any upload entry point.
+
+        Args:
+            event: Group event that identifies the caller and target group.
+            profile: Rubric to save, or an empty string to begin waiting.
+
+        Returns:
+            The waiting prompt, save result, or a permission message.
         """
         reply = event.make_result().use_t2i(False).use_markdown(False)
         group_id = event.get_group_id()
         if not group_id:
-            yield reply.message("该指令只能在群聊中使用。")
-            return
-        if not await _is_group_admin(event):
-            yield reply.message("权限不足：只有群管理员或群主才能使用此指令。")
-            return
+            return reply.message("该指令只能在群聊中使用。")
 
-        # CommandFilter normalizes whitespace in its arguments.
-        profile = event.get_message_str().removeprefix("上传群画像").strip()
+        key = (
+            event.get_platform_id(),
+            event.get_self_id(),
+            group_id,
+            event.get_sender_id(),
+        )
+        if profile:
+            # Claim the pending upload before checking the role over the network.
+            self._pending_profile_uploads.pop(key, None)
+        if not await _is_group_admin(event):
+            return reply.message("权限不足：只有群管理员或群主才能使用此指令。")
         if not profile:
-            yield reply.message("用法：/上传群画像 <审核标准>，可在同一条消息中换行。")
-            return
+            now = time.monotonic()
+            self._pending_profile_uploads = {
+                pending_key: deadline
+                for pending_key, deadline in self._pending_profile_uploads.items()
+                if deadline > now
+            }
+            self._pending_profile_uploads[key] = now + _PROFILE_UPLOAD_TIMEOUT
+            return reply.message(
+                f"正在等待发送审核标准。请在 {_PROFILE_UPLOAD_TIMEOUT // 60} 分钟内直接发送文本，"
+                "支持同一条消息内换行。"
+            )
 
         group_cfg = get_group_cfg(group_id)
         previous = group_cfg.get("MANUAL_PROFILE")
@@ -766,9 +857,8 @@ class MyPlugin(Star):
                 group_cfg.pop("MANUAL_PROFILE")
             else:
                 group_cfg["MANUAL_PROFILE"] = previous
-            yield reply.message("保存失败，本群审核标准未修改。")
-            return
-        yield reply.message("已保存本群 AI 审核标准，下次审核将使用新标准。")
+            return reply.message("保存失败，本群审核标准未修改。")
+        return reply.message("审核标准更新成功，已保存为本群手动画像。")
 
     @filter.command_group("Group Verify", alias={"群组验证", "验证"})
     def group_verify(self, event: AstrMessageEvent):
@@ -808,7 +898,7 @@ class MyPlugin(Star):
             f"/群组验证 记录 <页码> - 查看指定页审核记录\n"
             f"/群组验证 清空记录 - 清空本群全部审核记录（仅管理员）\n"
             "/群画像 - 查看本群 AI 审核标准\n"
-            "/上传群画像 <审核标准> - 更新本群 AI 审核标准\n"
+            "/上传群画像 - 等待你发送新的审核标准\n"
             "/群画像公告更新 开|关 - 设置自动画像是否跟随公告\n"
             "/群管助手 <操作> - 用自然语言管理本群\n"
             "PS: 加入白名单的人会不用通过AI 审核,直接进群,谨慎加白名单❗"

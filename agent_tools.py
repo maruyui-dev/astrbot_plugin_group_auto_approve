@@ -1,4 +1,7 @@
+from collections.abc import Awaitable, Callable
+
 from astrbot.api import FunctionTool, logger
+from astrbot.api.event import AstrMessageEvent, MessageEventResult
 from astrbot.core.message.message_event_result import MessageChain
 
 from .ai_verify import get_effective_group_profile
@@ -136,6 +139,40 @@ class SetGroupProfileNoticeRefreshTool(FunctionTool):
             if enabled
             else "已关闭公告自动更新，保留本群当前的自动画像。"
         )
+
+
+class StartGroupProfileUploadTool(FunctionTool):
+    """Prompt the current administrator for a group review rubric."""
+
+    def __init__(
+        self,
+        start_upload: Callable[[AstrMessageEvent], Awaitable[MessageEventResult]],
+    ):
+        super().__init__(
+            name="start_group_profile_upload",
+            description=(
+                "用户要求上传、修改或更换本群的群画像或审核标准时，"
+                "发送等待提示，让管理员下一条群消息直接提交审核标准。"
+            ),
+            parameters={"type": "object", "properties": {}},
+        )
+        self.start_upload = start_upload
+
+    async def call(self, context, **kwargs) -> str:
+        """Start the upload and send its prompt in the current group.
+
+        Args:
+            context: Agent context containing the original group event.
+            **kwargs: Unused tool arguments.
+
+        Returns:
+            The message sent to the group.
+        """
+        event = context.context.event
+        reply = await self.start_upload(event)
+        await event.send(reply)
+        event.stop_event()
+        return reply.get_plain_text()
 
 
 class SetMinLevelTool(FunctionTool):
