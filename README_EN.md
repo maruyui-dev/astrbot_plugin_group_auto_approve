@@ -100,6 +100,8 @@ All group members can use `/验证 记录` or `/群管助手 查看审核记录`
 
 Group owners and administrators can start a profile upload with `上传群画像`, `/上传群画像`, or the agent. After the bot prompts for the rubric, the same sender has five minutes to post it as a plain text message in the same group. Line breaks are preserved.
 
+Group profile operations also accept direct Chinese requests in the group, with an optional bot mention. For example, `给我看看本群的群画像` shows the current rubric, `帮我换一下本群的审核标准` starts an upload, and `把群画像的公告自动更新关掉` turns off automatic updates from announcements.
+
 ## Configuration
 
 The plugin supports independent configuration for multiple QQ groups:

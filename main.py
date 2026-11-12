@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 
 #导入Astrbot模块以及第三方模块
@@ -16,6 +17,7 @@ from astrbot.core.star.filter.regex import RegexFilter
 from .agent_tools import (
     SetVerifySwitchTool,
     SetGroupProfileNoticeRefreshTool,
+    ShowGroupProfileTool,
     StartGroupProfileUploadTool,
     SetMinLevelTool,
     SetLevelRequiredTool,
@@ -45,7 +47,7 @@ from .request import (
     handle_group_request,
     set_avatar_dir,
 )
-from .ai_verify import get_effective_group_profile, verify_by_llm
+from .ai_verify import verify_by_llm
 from .config import (
     get_group_cfg,
     save_all,
@@ -70,6 +72,20 @@ _DEDUP_CONTEXT_KEY = "_group_auto_approve_event_dedup_state"
 _KICK_BATCH_CONTEXT_KEY = "_group_auto_approve_kick_batch_state"
 _DEDUP_STATS_LOG_INTERVAL = 100
 _PROFILE_UPLOAD_TIMEOUT = 300
+_PROFILE_SUBJECT = r"(?:(?:本群|当前群|这个群)的?)?(?:群画像|(?:入群|AI\s*)?审核标准)"
+_PROFILE_ACTION = (
+    r"(?:查看|查询|看看|看(?:一下|下|一眼)|显示|发(?:一下|给我|我)|"
+    r"上传|提交|更新|修改|更换|换(?:一下|下)?|改(?:一下|下)?|编辑|设置|重设|"
+    r"开启|打开|启用|关闭|关掉|停用|暂停|停止|恢复)"
+)
+_PROFILE_REQUEST = re.compile(
+    r"^(?:(?:请(?:你|帮我)?|帮我|麻烦(?:你|帮我)?|我想(?:要)?|我要|"
+    r"能不能(?:帮我)?|能否(?:帮我)?|可以(?:帮我)?|给我)[\s，,]*){0,3}"
+    rf"(?:{_PROFILE_ACTION}(?:一下|下)?\s*{_PROFILE_SUBJECT}"
+    rf"|(?:把|让)\s*{_PROFILE_SUBJECT}[^\n]*?{_PROFILE_ACTION}"
+    rf"|{_PROFILE_SUBJECT}的?公告(?:自动)?更新(?:能不能|能否|可以){_PROFILE_ACTION})",
+    re.IGNORECASE,
+)
 _RECORD_QUERY_KEYWORDS = ("审核记录", "申请记录", "查看记录")
 # 出现这些词说明用户在改配置或名单，不能走固定格式的快捷回复
 _CONFIG_QUERY_KEYWORDS = (
@@ -112,7 +128,7 @@ async def build_application_message(context, result, verify_result=None):
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.8.5"
+    "1.8.6"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -658,45 +674,70 @@ class MyPlugin(Star):
             )
             return
 
+        reply = await self._run_group_agent(event, text)
+        if reply is not None:
+            yield reply
+
+    async def _run_group_agent(
+        self, event: AstrMessageEvent, text: str, *, profile_only: bool = False
+    ) -> MessageEventResult | None:
+        """Run the agent after the caller has checked group permissions.
+
+        Args:
+            event: Incoming group request.
+            text: Operation requested in the message.
+            profile_only: Whether to expose only group profile operations.
+
+        Returns:
+            A text result when the agent has a reply to send.
+        """
+        tools = [
+            ShowGroupProfileTool(),
+            SetGroupProfileNoticeRefreshTool(),
+            StartGroupProfileUploadTool(self._handle_group_profile_upload),
+        ]
+        system_prompt = (
+            "你是群管助手。根据用户的要求调用合适的工具，一次只调用必要的工具。"
+            "工具已直接发送回复时结束。工具只返回操作结果时，简短告知用户结果后结束。"
+            "只处理当前群。遇到其他群或未明确要求执行操作的问题，先确认用户意图。"
+        )
+        if not profile_only:
+            tools.extend(
+                [
+                    GetListsTool(),
+                    GetConfigTool(),
+                    GetReviewRecordsTool(),
+                    SetVerifySwitchTool(),
+                    SetMinLevelTool(),
+                    SetLevelRequiredTool(),
+                    AddBlacklistTool(),
+                    RemoveBlacklistTool(),
+                    ClearBlacklistTool(),
+                    AddWhitelistTool(),
+                    RemoveWhitelistTool(),
+                    ClearWhitelistTool(),
+                    ClearReviewRecordsTool(),
+                ]
+            )
         provider_id = await self.context.get_current_chat_provider_id(
             event.unified_msg_origin
         )
-
-        tools = [
-            GetListsTool(),
-            GetConfigTool(),
-            GetReviewRecordsTool(),
-            SetVerifySwitchTool(),
-            SetGroupProfileNoticeRefreshTool(),
-            StartGroupProfileUploadTool(self._handle_group_profile_upload),
-            SetMinLevelTool(),
-            SetLevelRequiredTool(),
-            AddBlacklistTool(),
-            RemoveBlacklistTool(),
-            ClearBlacklistTool(),
-            AddWhitelistTool(),
-            RemoveWhitelistTool(),
-            ClearWhitelistTool(),
-            ClearReviewRecordsTool(),
-        ]
-
         max_steps = max(1, int(get_webui_config("agent_max_steps", 3) or 3))
         llm_resp = await self.context.tool_loop_agent(
             event=event,
             chat_provider_id=provider_id,
             prompt=text,
-            system_prompt=(
-                "你是群管助手。根据用户的要求调用合适的工具，一次只调用必要的工具。"
-                "工具已直接发送回复时结束。工具只返回操作结果时，简短告知用户结果后结束。"
-                "不要编造不存在的功能。"
-                "审核记录查询允许所有群成员使用，其他配置和名单管理操作仅限管理员。"
-            ),
+            system_prompt=system_prompt,
             tools=ToolSet(tools),
             max_steps=max_steps,
         )
 
         if llm_resp and llm_resp.completion_text and not event.is_stopped():
-            yield event.plain_result(llm_resp.completion_text)
+            reply = event.plain_result(llm_resp.completion_text)
+            if profile_only:
+                reply.use_t2i(False).use_markdown(False)
+            return reply
+        return None
 
     @filter.command("群画像")
     async def show_group_profile(self, event: AstrMessageEvent):
@@ -708,25 +749,7 @@ class MyPlugin(Star):
         Yields:
             The rubric and its source, or a permission message.
         """
-        reply = event.make_result().use_t2i(False).use_markdown(False)
-        group_id = event.get_group_id()
-        if not group_id:
-            yield reply.message("该指令只能在群聊中使用。")
-            return
-        if not await _is_group_admin(event):
-            yield reply.message("权限不足：只有群管理员或群主才能使用此指令。")
-            return
-
-        profile, revision = await get_effective_group_profile(event)
-        source = "手动上传" if revision else "自动生成"
-        refresh_state = (
-            "关闭"
-            if get_group_cfg(group_id).get("FROZEN_AUTO_PROFILE") is not None
-            else "开启"
-        )
-        yield reply.message(
-            f"本群 AI 审核标准（{source}，公告自动更新：{refresh_state}）\n{profile}"
-        )
+        yield await ShowGroupProfileTool.get_reply(event)
 
     @filter.command("群画像公告更新")
     async def set_group_profile_notice_refresh(self, event: AstrMessageEvent):
@@ -763,13 +786,13 @@ class MyPlugin(Star):
     async def _receive_group_profile(
         self, event: AstrMessageEvent
     ) -> MessageEventResult | None:
-        """Route a plain upload request or the pending administrator's next text.
+        """Route a profile request or the pending administrator's next text.
 
         Args:
             event: Incoming OneBot message.
 
         Returns:
-            An upload reply, or None when the message belongs to another flow.
+            A reply to send through the message pipeline, if any.
         """
         group_id = event.get_group_id()
         text = event.get_message_str().strip()
@@ -778,8 +801,11 @@ class MyPlugin(Star):
         if text != (event.message_obj.message_str or "").strip():
             return None
 
-        start_upload = text == "上传群画像"
-        if not start_upload:
+        messages = event.get_messages()
+        plain = all(isinstance(component, Comp.Plain) for component in messages)
+        start_upload = plain and text == "上传群画像"
+        pending_upload = False
+        if plain and not start_upload and self._pending_profile_uploads:
             key = (
                 event.get_platform_id(),
                 event.get_self_id(),
@@ -787,15 +813,20 @@ class MyPlugin(Star):
                 event.get_sender_id(),
             )
             deadline = self._pending_profile_uploads.get(key)
-            if deadline is None:
-                return None
-            if deadline <= time.monotonic():
-                self._pending_profile_uploads.pop(key)
-                return None
+            if deadline is not None:
+                pending_upload = deadline > time.monotonic()
+                if not pending_upload:
+                    self._pending_profile_uploads.pop(key)
 
-        if not all(
-            isinstance(component, Comp.Plain) for component in event.get_messages()
-        ):
+        natural_request = _PROFILE_REQUEST.match(text) and all(
+            isinstance(component, Comp.Plain)
+            or (
+                isinstance(component, Comp.At)
+                and str(component.qq) == str(event.get_self_id())
+            )
+            for component in messages
+        )
+        if not (start_upload or pending_upload or natural_request):
             return None
         if any(
             isinstance(event_filter, (CommandFilter, CommandGroupFilter, RegexFilter))
@@ -804,9 +835,15 @@ class MyPlugin(Star):
         ):
             return None
 
-        return await self._handle_group_profile_upload(
-            event, "" if start_upload else text
-        )
+        if start_upload or pending_upload:
+            return await self._handle_group_profile_upload(
+                event, "" if start_upload else text
+            )
+        if not await _is_group_admin(event):
+            return event.plain_result(
+                "权限不足：只有群管理员或群主才能使用此指令。"
+            ).use_t2i(False)
+        return await self._run_group_agent(event, text, profile_only=True)
 
     async def _handle_group_profile_upload(
         self, event: AstrMessageEvent, profile: str = ""

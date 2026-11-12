@@ -175,6 +175,60 @@ class StartGroupProfileUploadTool(FunctionTool):
         return reply.get_plain_text()
 
 
+class ShowGroupProfileTool(FunctionTool):
+    """Send the current group's review rubric as copyable text."""
+
+    def __init__(self):
+        super().__init__(
+            name="show_group_profile",
+            description="查看本群正在使用的群画像、入群审核标准和公告自动更新状态。",
+            parameters={"type": "object", "properties": {}},
+        )
+
+    async def call(self, context, **kwargs) -> str:
+        """Send the rubric to the group that requested it.
+
+        Args:
+            context: Agent context containing the original group event.
+            **kwargs: Unused tool arguments.
+
+        Returns:
+            The result of sending the group reply.
+        """
+        event = context.context.event
+        await event.send(await self.get_reply(event))
+        event.stop_event()
+        return "已在群内发送回复。"
+
+    @staticmethod
+    async def get_reply(event: AstrMessageEvent) -> MessageEventResult:
+        """Build the same profile reply for the command and agent.
+
+        Args:
+            event: Incoming request that identifies the group and sender.
+
+        Returns:
+            The effective rubric and its source, or a permission message.
+        """
+        reply = event.make_result().use_t2i(False).use_markdown(False)
+        group_id = event.get_group_id()
+        if not group_id:
+            return reply.message("该指令只能在群聊中使用。")
+        if not await _is_group_admin(event):
+            return reply.message("权限不足：只有群管理员或群主才能使用此指令。")
+
+        profile, revision = await get_effective_group_profile(event)
+        source = "手动上传" if revision else "自动生成"
+        refresh_state = (
+            "关闭"
+            if get_group_cfg(group_id).get("FROZEN_AUTO_PROFILE") is not None
+            else "开启"
+        )
+        return reply.message(
+            f"本群 AI 审核标准（{source}，公告自动更新：{refresh_state}）\n{profile}"
+        )
+
+
 class SetMinLevelTool(FunctionTool):
     """设置当前群的等级限制最低等级。"""
 
