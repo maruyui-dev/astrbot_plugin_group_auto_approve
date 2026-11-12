@@ -109,7 +109,7 @@ async def build_application_message(context, result, verify_result=None):
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.8.1"
+    "1.8.2"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -709,16 +709,73 @@ class MyPlugin(Star):
         Yields:
             The rubric and its source, or a permission message.
         """
-        if not event.get_group_id():
-            yield event.plain_result("该指令只能在群聊中使用。")
+        reply = event.make_result().use_t2i(False).use_markdown(False)
+        group_id = event.get_group_id()
+        if not group_id:
+            yield reply.message("该指令只能在群聊中使用。")
             return
         if not await _is_group_admin(event):
-            yield event.plain_result("权限不足：只有群管理员或群主才能使用此指令。")
+            yield reply.message("权限不足：只有群管理员或群主才能使用此指令。")
             return
 
         profile, revision = await get_effective_group_profile(event)
         source = "手动上传" if revision else "自动生成"
-        yield event.plain_result(f"本群 AI 审核标准（{source}）\n{profile}")
+        refresh_state = (
+            "关闭"
+            if get_group_cfg(group_id).get("FROZEN_AUTO_PROFILE") is not None
+            else "开启"
+        )
+        yield reply.message(
+            f"本群 AI 审核标准（{source}，公告自动更新：{refresh_state}）\n{profile}"
+        )
+
+    @filter.command("群画像公告更新")
+    async def set_group_profile_notice_refresh(self, event: AstrMessageEvent):
+        """Toggle whether announcements refresh this group's automatic rubric.
+
+        Args:
+            event: Incoming command event.
+
+        Yields:
+            The saved setting, usage instructions, or a permission message.
+        """
+        reply = event.make_result().use_t2i(False).use_markdown(False)
+        group_id = event.get_group_id()
+        if not group_id:
+            yield reply.message("该指令只能在群聊中使用。")
+            return
+        if not await _is_group_admin(event):
+            yield reply.message("权限不足：只有群管理员或群主才能使用此指令。")
+            return
+
+        args = event.get_message_str().split()[1:]
+        if args not in (["开"], ["关"]):
+            yield reply.message("用法：/群画像公告更新 开 或 /群画像公告更新 关")
+            return
+
+        frozen_profile = None
+        if args == ["关"]:
+            frozen_profile, _ = await get_effective_group_profile(
+                event, automatic_only=True
+            )
+
+        group_cfg = get_group_cfg(group_id)
+        previous = group_cfg.pop("FROZEN_AUTO_PROFILE", None)
+        if frozen_profile is not None:
+            group_cfg["FROZEN_AUTO_PROFILE"] = frozen_profile
+        if frozen_profile != previous and not save_all():
+            if previous is None:
+                group_cfg.pop("FROZEN_AUTO_PROFILE")
+            else:
+                group_cfg["FROZEN_AUTO_PROFILE"] = previous
+            yield reply.message("保存失败，本群的公告自动更新设置未修改。")
+            return
+
+        yield reply.message(
+            "已关闭公告自动更新，保留本群当前的自动画像。"
+            if frozen_profile is not None
+            else "已开启公告自动更新，本群自动画像将跟随群公告。"
+        )
 
     @filter.command("上传群画像")
     async def upload_group_profile(self, event: AstrMessageEvent):
@@ -730,20 +787,19 @@ class MyPlugin(Star):
         Yields:
             The save result, usage instructions, or a permission message.
         """
+        reply = event.make_result().use_t2i(False).use_markdown(False)
         group_id = event.get_group_id()
         if not group_id:
-            yield event.plain_result("该指令只能在群聊中使用。")
+            yield reply.message("该指令只能在群聊中使用。")
             return
         if not await _is_group_admin(event):
-            yield event.plain_result("权限不足：只有群管理员或群主才能使用此指令。")
+            yield reply.message("权限不足：只有群管理员或群主才能使用此指令。")
             return
 
         # CommandFilter normalizes whitespace in its arguments.
         profile = event.get_message_str().removeprefix("上传群画像").strip()
         if not profile:
-            yield event.plain_result(
-                "用法：/上传群画像 <审核标准>，可在同一条消息中换行。"
-            )
+            yield reply.message("用法：/上传群画像 <审核标准>，可在同一条消息中换行。")
             return
 
         group_cfg = get_group_cfg(group_id)
@@ -754,9 +810,9 @@ class MyPlugin(Star):
                 group_cfg.pop("MANUAL_PROFILE")
             else:
                 group_cfg["MANUAL_PROFILE"] = previous
-            yield event.plain_result("保存失败，本群审核标准未修改。")
+            yield reply.message("保存失败，本群审核标准未修改。")
             return
-        yield event.plain_result("已保存本群 AI 审核标准，下次审核将使用新标准。")
+        yield reply.message("已保存本群 AI 审核标准，下次审核将使用新标准。")
 
     @filter.command_group("Group Verify", alias={"群组验证", "验证"})
     def group_verify(self, event: AstrMessageEvent):
@@ -797,6 +853,7 @@ class MyPlugin(Star):
             f"/群组验证 清空记录 - 清空本群全部审核记录（仅管理员）\n"
             "/群画像 - 查看本群 AI 审核标准\n"
             "/上传群画像 <审核标准> - 更新本群 AI 审核标准\n"
+            "/群画像公告更新 开|关 - 设置自动画像是否跟随公告\n"
             "PS: 加入白名单的人会不用通过AI 审核,直接进群,谨慎加白名单❗"
         )
 

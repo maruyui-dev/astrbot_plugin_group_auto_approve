@@ -35,7 +35,12 @@ def parse_question_answer(comment):
 
 
 async def get_effective_group_profile(
-    event, group_name=None, group_notice="", group_notice_first=""
+    event,
+    group_name=None,
+    group_notice="",
+    group_notice_first="",
+    *,
+    automatic_only=False,
 ) -> tuple[str, str]:
     """Resolve the exact group rubric used in the system prompt.
 
@@ -44,20 +49,28 @@ async def get_effective_group_profile(
         group_name: Name already fetched for a request, or None to fetch group context.
         group_notice: Latest notice already fetched for a request.
         group_notice_first: Earliest notice already fetched for a request.
+        automatic_only: Resolve the automatic rubric when saving a frozen copy.
 
     Returns:
         Rubric text and the upload revision, empty for an automatic rubric.
     """
     group_id = event.get_group_id()
     group_cfg = get_group_cfg(group_id)
-    if group_name is None and not group_cfg.get("MANUAL_PROFILE"):
+    if (
+        group_name is None
+        and group_cfg.get("FROZEN_AUTO_PROFILE") is None
+        and (automatic_only or not group_cfg.get("MANUAL_PROFILE"))
+    ):
         group_name, group_notice, group_notice_first = await get_group_review_context(
             event, group_id
         )
 
     manual_profile = group_cfg.get("MANUAL_PROFILE")
-    if manual_profile:
+    if manual_profile and not automatic_only:
         return manual_profile["text"], manual_profile["revision"]
+    frozen_profile = group_cfg.get("FROZEN_AUTO_PROFILE")
+    if frozen_profile is not None:
+        return frozen_profile, ""
 
     group_name = (group_name or "").strip()
     raw_profile = "\n".join(
