@@ -109,7 +109,7 @@ async def build_application_message(context, result, verify_result=None):
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.8.2"
+    "1.8.3"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -581,71 +581,41 @@ class MyPlugin(Star):
             yield event.plain_result("处理入群申请失败")
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    @filter.command("群管助手")
     async def agent_listener(self, event: AstrMessageEvent):
-        if not event.is_at_or_wake_command:
-            return
+        """Handle an explicit request to the current group's management agent.
+
+        Args:
+            event: Incoming group command.
+
+        Yields:
+            The result of the requested operation or a permission message.
+        """
+        # Give another matched command or regex handler priority.
+        for handler in event.get_extra("activated_handlers") or ():
+            if (
+                handler.handler_module_path == __name__
+                and handler.handler_name == "agent_listener"
+            ):
+                continue
+            if any(
+                isinstance(
+                    event_filter, (CommandFilter, CommandGroupFilter, RegexFilter)
+                )
+                for event_filter in handler.event_filters or ()
+            ):
+                return
 
         if await self._is_duplicate_event(event, "agent"):
             return
 
-        text = event.message_str.strip()
-
-        # The framework strips the wake prefix before handlers run, so "/note"
-        # reaches this listener as "note" and startswith("/") can never match.
-        # activated_handlers holds every handler that already passed all of its
-        # filters for this event: when another plugin's command or regex matched,
-        # step aside so one message is never answered by two plugins at once.
-        activated_handlers = event.get_extra("activated_handlers")
-        if activated_handlers is not None:
-            for handler in activated_handlers:
-                if handler.handler_name == "agent_listener":
-                    continue
-                if any(
-                    isinstance(
-                        event_filter,
-                        (CommandFilter, CommandGroupFilter, RegexFilter),
-                    )
-                    for event_filter in (handler.event_filters or ())
-                ):
-                    return
-        else:
-            # Older frameworks do not expose activated_handlers. Fall back to a
-            # conservative rule: skip every explicit wake-prefixed command, and
-            # reach the natural language entry point by @-mentioning the bot.
-            raw_text = (event.message_obj.message_str or "").strip()
-            wake_prefixes = (
-                self.context.get_config(umo=event.unified_msg_origin).get(
-                    "wake_prefix", []
-                )
-                or []
-            )
-            if any(raw_text.startswith(prefix) for prefix in wake_prefixes):
-                return
-
-        if text.startswith(("/", "验证", "群组验证", "接收申请", "名单")):
-            return
-
-        is_admin = await _is_group_admin(event)
+        parts = event.get_message_str().split(maxsplit=1)
+        text = parts[1] if len(parts) > 1 else ""
         record_query_requested = any(
             keyword in text for keyword in _RECORD_QUERY_KEYWORDS
         )
-        if not is_admin and not record_query_requested:
-            yield event.plain_result("权限不足：只有群管理员或群主才能使用此功能。")
-            return
 
-        if "帮助" in text or "help" in text.lower():
-            yield event.plain_result(
-                "我是群管助手。你可以直接对我说：\n"
-                "· 查看黑名单\n"
-                "· 把 123456 加入黑名单\n"
-                "· 关闭入群验证\n"
-                "· 设置最低等级 5\n"
-                "· 查看审核记录或查看第 2 页审核记录\n"
-                "也可以使用 /验证 帮助 查看完整指令。"
-            )
-            return
-
-        # 固定格式的查记录请求直接复用指令逻辑，完全不需要进入 Agent
+        # Record queries are public and do not require an agent call.
         if record_query_requested and not any(
             keyword in text for keyword in _CONFIG_QUERY_KEYWORDS
         ):
@@ -659,27 +629,41 @@ class MyPlugin(Star):
                 yield reply
             return
 
+        if not await _is_group_admin(event):
+            yield event.plain_result("权限不足：只有群管理员或群主才能使用此功能。")
+            return
+
+        if not text or "帮助" in text or "help" in text.lower():
+            yield event.plain_result(
+                "可以用以下指令管理本群\n"
+                "· /群管助手 查看黑名单\n"
+                "· /群管助手 把 123456 加入黑名单\n"
+                "· /群管助手 关闭入群验证\n"
+                "· /群管助手 设置最低等级 5\n"
+                "· /群管助手 查看第 2 页审核记录\n"
+                "也可以使用 /验证 帮助 查看完整指令。"
+            )
+            return
+
         provider_id = await self.context.get_current_chat_provider_id(
             event.unified_msg_origin
         )
 
-        # 只发送与当前权限相关的工具定义，每少一个工具就少一份固定的输入 Token
-        tools = [GetListsTool(), GetConfigTool(), GetReviewRecordsTool()]
-        if is_admin:
-            tools.extend(
-                [
-                    SetVerifySwitchTool(),
-                    SetMinLevelTool(),
-                    SetLevelRequiredTool(),
-                    AddBlacklistTool(),
-                    RemoveBlacklistTool(),
-                    ClearBlacklistTool(),
-                    AddWhitelistTool(),
-                    RemoveWhitelistTool(),
-                    ClearWhitelistTool(),
-                    ClearReviewRecordsTool(),
-                ]
-            )
+        tools = [
+            GetListsTool(),
+            GetConfigTool(),
+            GetReviewRecordsTool(),
+            SetVerifySwitchTool(),
+            SetMinLevelTool(),
+            SetLevelRequiredTool(),
+            AddBlacklistTool(),
+            RemoveBlacklistTool(),
+            ClearBlacklistTool(),
+            AddWhitelistTool(),
+            RemoveWhitelistTool(),
+            ClearWhitelistTool(),
+            ClearReviewRecordsTool(),
+        ]
 
         max_steps = max(1, int(get_webui_config("agent_max_steps", 3) or 3))
         llm_resp = await self.context.tool_loop_agent(
@@ -854,6 +838,7 @@ class MyPlugin(Star):
             "/群画像 - 查看本群 AI 审核标准\n"
             "/上传群画像 <审核标准> - 更新本群 AI 审核标准\n"
             "/群画像公告更新 开|关 - 设置自动画像是否跟随公告\n"
+            "/群管助手 <操作> - 用自然语言管理本群\n"
             "PS: 加入白名单的人会不用通过AI 审核,直接进群,谨慎加白名单❗"
         )
 

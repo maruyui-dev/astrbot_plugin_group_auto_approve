@@ -62,7 +62,7 @@ The plugin stores per-group application review records, including the applicant'
 - Use `/验证 记录 <page>` to view a specific page.
 - Each page contains up to 5 records.
 - The oldest record is removed automatically when the configured limit is reached.
-- Group members can view records, and the Agent can query them using natural language.
+- Group members can view records with `/验证 记录` or `/群管助手 查看审核记录`.
 
 ### 4. Image Review Notifications
 
@@ -85,45 +85,15 @@ The plugin provides configuration options for:
 
 ### 6. Agent-Based Intelligent Management
 
-The plugin integrates Agent functionality.
-
-Administrators can use natural language commands and let the AI call plugin tools to perform management operations.
-
-For example:
+Group owners and administrators can send `/群管助手 <operation>` in a group to manage that group with the agent. They can also mention the bot and enter `群管助手 <operation>`.
 
 ```text
-Disable automatic review for QQ group 1063462063.
+/群管助手 Disable automatic review for this group.
+/群管助手 Add QQ user 123456789 to the whitelist.
+/群管助手 Show the users currently on the whitelist.
 ```
 
-The Agent automatically understands the request and calls the corresponding tool.
-
-Another example:
-
-```text
-Show today's group join requests.
-```
-
-The Agent will automatically:
-
-1. Call the review-record query tool
-2. Retrieve the day's application data
-3. Return a summary of the results
-
-```text
-Add QQ user 123456789 to the whitelist.
-```
-
-The Agent will automatically:
-
-1. Identify the requested operation
-2. Call the whitelist management tool
-3. Complete the update
-
-```text
-Show the users currently on the whitelist.
-```
-
-The Agent automatically calls the list management tools and returns the current whitelist.
+All group members can use `/验证 记录` or `/群管助手 查看审核记录` to view their group's review records.
 
 ## Configuration
 
