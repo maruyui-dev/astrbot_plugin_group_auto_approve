@@ -637,6 +637,100 @@ async def build_leave_message(result):
         return build_leave_text(result)
 
 
+def build_invitation_text(result):
+    """Build the text fallback for a request waiting for an administrator.
+
+    Args:
+        result: Group and participant details from the OneBot request.
+
+    Returns:
+        A plain-text notification chain.
+    """
+    is_invitation = result["is_invitation"]
+    title = "新的入群邀请" if is_invitation else "新的入群请求"
+    lines = [f"{title} · 待管理员审核"]
+    if result.get("group_name"):
+        lines.append(f"群聊：{result['group_name']}")
+    for role, label in (
+        ("inviter", "邀请者"),
+        ("invitee", "被邀请者" if is_invitation else "待入群者"),
+    ):
+        name = result.get(f"{role}_name")
+        user_id = result.get(f"{role}_id")
+        if name and user_id:
+            identity = f"{name}（QQ {user_id}）"
+        elif user_id:
+            identity = f"QQ {user_id}"
+        else:
+            identity = name or "未提供"
+        lines.append(f"{label}：{identity}")
+    if result.get("invite_time"):
+        lines.append(f"时间：{result['invite_time']}")
+    lines.append("请群管理员在 QQ 内处理。")
+    return [Plain("\n".join(lines))]
+
+
+async def build_invitation_message(result):
+    """Render the invitation card or fall back to a plain-text notification.
+
+    Args:
+        result: Group and participant details with optional local avatar paths.
+
+    Returns:
+        A message chain containing the card or the text fallback.
+    """
+    template_data = {
+        key: result.get(key) or ""
+        for key in (
+            "group_name",
+            "invite_time",
+            "inviter_id",
+            "inviter_name",
+            "invitee_id",
+            "invitee_name",
+        )
+    }
+    template_data["is_invitation"] = result["is_invitation"]
+    for role in ("inviter", "invitee"):
+        if avatar_path := result.get(f"{role}_avatar_path"):
+            try:
+                avatar_file = Path(avatar_path)
+                mime_type = mimetypes.guess_type(avatar_file.name)[0] or "image/png"
+                encoded = base64.b64encode(avatar_file.read_bytes()).decode("ascii")
+                template_data[f"{role}_avatar"] = f"data:{mime_type};base64,{encoded}"
+            except OSError as error:
+                logger.warning(f"Could not read {role} avatar: {error}")
+
+    try:
+        template = Path(__file__).with_name("templates") / "group_invite.html"
+        image_path = await html_renderer.render_custom_template(
+            template.read_text(encoding="utf-8"),
+            template_data,
+            return_url=False,
+            options={
+                "full_page": True,
+                "omit_background": True,
+                "viewport_width": 812,
+                "type": "png",
+                "quality": 90,
+            },
+        )
+        rendered_image_file = Path(image_path)
+        try:
+            with PILImage.open(rendered_image_file) as rendered_image:
+                cropped = crop_card_region(rendered_image.convert("RGBA"))
+                background = PILImage.new("RGB", cropped.size, "#ffffff")
+                background.paste(cropped, mask=cropped.getchannel("A"))
+                output = io.BytesIO()
+                background.save(output, format="PNG")
+        finally:
+            rendered_image_file.unlink(missing_ok=True)
+        return [Image.fromBytes(output.getvalue())]
+    except Exception as error:
+        logger.warning(f"Could not render the invitation card, sending text: {error}")
+        return build_invitation_text(result)
+
+
 async def build_verify_message(context, result, verify_result=None):
     """Build an image-based review message with a text fallback.
 
