@@ -36,6 +36,8 @@ from .agent_tools import (
 #导入项目内部模块
 from .action import approve_group_request
 from .message import (
+    build_invitation_message,
+    build_invitation_text,
     build_leave_message,
     build_leave_text,
     build_verify_chain,
@@ -45,6 +47,7 @@ from .request import (
     download_avatar,
     download_group_avatar,
     handle_group_request,
+    read_group_invitation,
     set_avatar_dir,
 )
 from .ai_verify import verify_by_llm
@@ -128,7 +131,7 @@ async def build_application_message(context, result, verify_result=None):
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.8.6"
+    "1.8.7"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -390,6 +393,60 @@ class MyPlugin(Star):
                 yield event.chain_result(build_leave_text(leave_result))
             return
 
+        if (
+            raw_event.get("post_type") != "request"
+            or raw_event.get("request_type") != "group"
+        ):
+            return
+        group_id = raw_event.get("group_id")
+        if not group_id:
+            return
+        group_cfg = get_group_cfg(group_id)
+        if not group_cfg["REQUEST_CONFIG"]:
+            return
+
+        subtype = raw_event.get("sub_type", "add")
+        # Older NapCat builds used a typed flag and reported the inviter as user_id.
+        flag_parts = str(raw_event.get("flag") or "").split("|")
+        typed_flag = (
+            len(flag_parts) in (3, 4)
+            and flag_parts[0] == str(group_id)
+            and flag_parts[1].isdigit()
+        )
+        legacy_invite = typed_flag and flag_parts[2] == "5"
+        if subtype != "add" and not (subtype == "invite" and legacy_invite):
+            return
+
+        inviter_id = raw_event.get("invitor_id") or raw_event.get("inviter_id")
+        invitee_id = raw_event.get("user_id")
+        if subtype == "invite":
+            inviter_id, invitee_id = invitee_id, None
+        if str(inviter_id) in ("0", str(invitee_id)):
+            inviter_id = None
+        is_invitation = bool(
+            inviter_id or legacy_invite or (typed_flag and flag_parts[2] == "22")
+        )
+        # An empty request without an inviter field can be an invitation on NapCat.
+        unknown_source = (
+            "invitor_id" not in raw_event
+            and "inviter_id" not in raw_event
+            and not typed_flag
+            and bool(invitee_id)
+            and not str(raw_event.get("comment") or "").strip()
+        )
+        if is_invitation or unknown_source:
+            send_images = get_webui_config("send_images", True)
+            invitation = await read_group_invitation(
+                event, group_id, inviter_id, invitee_id, is_invitation, send_images
+            )
+            chain = (
+                await build_invitation_message(invitation)
+                if send_images
+                else build_invitation_text(invitation)
+            )
+            yield event.chain_result(chain).use_t2i(False).use_markdown(False)
+            return
+
         result = await handle_group_request(event)
         if result is None:
             return
@@ -397,12 +454,6 @@ class MyPlugin(Star):
             yield event.plain_result(f"处理失败:{result.get('error')}")
             return
 
-        group_id = result.get("group_id")
-        group_cfg = get_group_cfg(group_id)
-
-        # 本群接收申请开关
-        if not group_cfg["REQUEST_CONFIG"]:
-            return
         user_id = result.get("user_id")
 
         # 黑名单：直接拒绝，不走 AI

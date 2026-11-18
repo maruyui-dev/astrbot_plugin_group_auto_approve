@@ -1,3 +1,4 @@
+import asyncio
 import re
 from datetime import datetime
 from pathlib import Path
@@ -89,6 +90,77 @@ async def get_group_review_context(event, group_id):
     group_notice = cleaned_notices[0] if cleaned_notices else ""
     group_notice_first = cleaned_notices[-1] if len(cleaned_notices) > 1 else ""
     return group_name, group_notice, group_notice_first
+
+
+async def read_group_invitation(
+    event, group_id, inviter_id, invitee_id, is_invitation: bool, send_images: bool
+):
+    """Enrich a pending invitation with the available OneBot identities.
+
+    Args:
+        event: OneBot group request event.
+        group_id: QQ group receiving the request.
+        inviter_id: Inviting member's QQ number, when reported.
+        invitee_id: Prospective member's QQ number, when reported.
+        is_invitation: Whether the event identifies a member invitation.
+        send_images: Whether to download avatars for the group notification.
+
+    Returns:
+        The group, participants and timestamp for the pending notification.
+    """
+    group_name = ""
+    try:
+        group = await event.bot.call_action("get_group_info", group_id=group_id)
+        group_name = group.get("group_name", "")
+    except Exception as error:
+        logger.warning(f"Could not look up the invitation group {group_id}: {error}")
+
+    result = {
+        "group_name": group_name,
+        "is_invitation": is_invitation,
+        "inviter_id": inviter_id,
+        "invitee_id": invitee_id,
+    }
+    timestamp = event.message_obj.raw_message.get("time")
+    if timestamp:
+        result["invite_time"] = datetime.fromtimestamp(timestamp).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+    participants = [
+        (role, user_id)
+        for role, user_id in (("inviter", inviter_id), ("invitee", invitee_id))
+        if user_id
+    ]
+    for role, user_id in participants:
+        nickname = ""
+        if role == "inviter":
+            try:
+                member = await event.bot.call_action(
+                    "get_group_member_info", group_id=group_id, user_id=user_id
+                )
+                nickname = member.get("card") or member.get("nickname")
+            except Exception as error:
+                logger.debug(
+                    f"Could not look up inviting group member {user_id}: {error}"
+                )
+        if not nickname:
+            try:
+                user = await event.bot.call_action("get_stranger_info", user_id=user_id)
+                nickname = user.get("nickname") or user.get("nick")
+            except Exception as error:
+                logger.warning(
+                    f"Could not look up invitation participant {user_id}: {error}"
+                )
+        result[f"{role}_name"] = nickname
+
+    if send_images:
+        avatars = await asyncio.gather(
+            *(download_avatar(user_id) for _, user_id in participants)
+        )
+        for (role, _), avatar in zip(participants, avatars):
+            result[f"{role}_avatar_path"] = avatar
+    return result
 
 
 async def handle_group_request(event):
