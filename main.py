@@ -131,7 +131,7 @@ async def build_application_message(context, result, verify_result=None):
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.8.7"
+    "1.8.8"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
