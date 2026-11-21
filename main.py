@@ -131,7 +131,7 @@ async def build_application_message(context, result, verify_result=None):
     "group_verify",
     "MaruYui",
     "QQ群自动入群审核插件",
-    "1.8.8"
+    "1.8.9"
 )
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -414,17 +414,29 @@ class MyPlugin(Star):
             and flag_parts[1].isdigit()
         )
         legacy_invite = typed_flag and flag_parts[2] == "5"
-        if subtype != "add" and not (subtype == "invite" and legacy_invite):
-            return
-
         inviter_id = raw_event.get("invitor_id") or raw_event.get("inviter_id")
         invitee_id = raw_event.get("user_id")
         if subtype == "invite":
-            inviter_id, invitee_id = invitee_id, None
+            # Some adapters report the invited account separately from the inviter.
+            invited_id = raw_event.get("invited_id")
+            if str(invited_id) == str(raw_event.get("self_id") or event.get_self_id()):
+                return
+            if str(invited_id or 0) == "0":
+                if not legacy_invite:
+                    return
+                invited_id = None
+            if str(inviter_id or 0) == "0":
+                inviter_id = invitee_id
+            invitee_id = invited_id
+        elif subtype != "add":
+            return
         if str(inviter_id) in ("0", str(invitee_id)):
             inviter_id = None
         is_invitation = bool(
-            inviter_id or legacy_invite or (typed_flag and flag_parts[2] == "22")
+            inviter_id
+            or subtype == "invite"
+            or legacy_invite
+            or (typed_flag and flag_parts[2] == "22")
         )
         # An empty request without an inviter field can be an invitation on NapCat.
         unknown_source = (
