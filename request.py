@@ -92,6 +92,70 @@ async def get_group_review_context(event, group_id):
     return group_name, group_notice, group_notice_first
 
 
+async def _lookup_invitation_inviter(
+    event, group_id, invitee_id
+) -> tuple[int | None, str]:
+    """Find the inviter explicitly identified by the matching OneBot request.
+
+    Args:
+        event: OneBot group request event.
+        group_id: QQ group receiving the request.
+        invitee_id: Prospective member's QQ number.
+
+    Returns:
+        The inviter's QQ number and system nickname, if available.
+    """
+    raw_event = event.message_obj.raw_message
+    group = str(group_id)
+    invitee = str(invitee_id)
+    flag = str(raw_event.get("flag") or "")
+    request_id = str(raw_event.get("request_id") or "")
+    if not request_id:
+        parts = flag.split("|")
+        if flag.isdecimal():
+            request_id = flag
+        elif len(parts) in (3, 4) and parts[0] == group and parts[1].isdecimal():
+            request_id = parts[1]
+    if not flag and not request_id:
+        return None, ""
+
+    try:
+        rows = await asyncio.wait_for(
+            event.bot.call_action("get_group_system_msg"), timeout=5
+        )
+    except Exception as error:
+        logger.debug(f"Could not look up group system messages for {group_id}: {error}")
+        return None, ""
+
+    if isinstance(rows, dict):
+        rows = rows.get("join_requests")
+    if not isinstance(rows, list):
+        return None, ""
+
+    matches: dict[int, str] = {}
+    for row in rows:
+        if not isinstance(row, dict) or str(row.get("group_id")) != group:
+            continue
+        if not (
+            (flag and flag == str(row.get("flag") or ""))
+            or (request_id and request_id == str(row.get("request_id") or ""))
+        ):
+            continue
+        target = str(row.get("target_uin") or "")
+        if target in ("", "0"):
+            target = str(row.get("requester_uin") or "")
+        if target not in ("", "0", invitee):
+            continue
+        # The actor or operator can be the administrator who reviewed the request.
+        inviter = str(row.get("invitor_uin") or "")
+        inviter_id = int(inviter) if inviter.isdecimal() else 0
+        if inviter_id and str(inviter_id) != invitee:
+            matches[inviter_id] = row.get("invitor_nick") or matches.get(inviter_id, "")
+    if len(matches) == 1:
+        return next(iter(matches.items()))
+    return None, ""
+
+
 async def read_group_invitation(
     event, group_id, inviter_id, invitee_id, is_invitation: bool, send_images: bool
 ):
@@ -115,9 +179,15 @@ async def read_group_invitation(
     except Exception as error:
         logger.warning(f"Could not look up the invitation group {group_id}: {error}")
 
+    system_inviter_name = ""
+    if not inviter_id and invitee_id:
+        inviter_id, system_inviter_name = await _lookup_invitation_inviter(
+            event, group_id, invitee_id
+        )
+
     result = {
         "group_name": group_name,
-        "is_invitation": is_invitation,
+        "is_invitation": is_invitation or bool(inviter_id),
         "inviter_id": inviter_id,
         "invitee_id": invitee_id,
     }
@@ -144,6 +214,7 @@ async def read_group_invitation(
                 logger.debug(
                     f"Could not look up inviting group member {user_id}: {error}"
                 )
+            nickname = nickname or system_inviter_name
         if not nickname:
             try:
                 user = await event.bot.call_action("get_stranger_info", user_id=user_id)
